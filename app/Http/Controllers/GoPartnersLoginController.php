@@ -10,8 +10,6 @@ use Illuminate\Support\Str;
 use GuzzleHttp\Psr7\Stream;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Twilio\Rest\Client;
-use Twilio\Exceptions\RestException;
 
 class GoPartnersLoginController extends Controller
 {
@@ -19,7 +17,7 @@ class GoPartnersLoginController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
+            // 'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:go_partners_logins',
             'phone' => 'required|string|max:255|unique:go_partners_logins',
@@ -109,7 +107,6 @@ class GoPartnersLoginController extends Controller
         'token' => $token,
     ]);
 }
-
     public function uploadDocument(Request $request)
     {
         // Basic authentication check (you might want to use Laravel Sanctum or Passport for proper auth)
