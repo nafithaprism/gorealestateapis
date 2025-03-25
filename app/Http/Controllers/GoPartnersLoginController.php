@@ -17,7 +17,7 @@ class GoPartnersLoginController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            // 'first_name' => 'required|string|max:255',
+            'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:go_partners_logins',
             'phone' => 'required|string|max:255|unique:go_partners_logins',

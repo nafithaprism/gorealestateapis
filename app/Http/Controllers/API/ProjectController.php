@@ -23,7 +23,8 @@ class ProjectController extends Controller
         if (count($data['property_types']) === 1) {
             $data['property_types'] = $data['property_types'][0];
         }
-
+        $data['location_id'] = $project->locations->pluck('id')->first() ?? null; // Single string or null
+        $data['property_type_id'] = $project->propertyTypes->pluck('id')->first() ?? null; // Single string or null
         return $data;
     }
 
