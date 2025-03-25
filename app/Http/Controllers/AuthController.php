@@ -37,16 +37,21 @@ class AuthController extends Controller
         $tokenResult = $user->createToken('API_Token');
         $token = $tokenResult->accessToken;
 
+        // Ensure token is not null
+        if (!$token) {
+            return response()->json(['status' => 500, 'error' => 'Failed to generate token'], 500);
+        }
+
         // Return response with user details
         return response()->json([
             'status' => 200,
             'success' => 'Logged in successfully',
             'user' => [
                 'id' => $user->id,
-                'first_name' => 'Admin', // Assuming first_name, can be retrieved if stored
-                'last_name' => 'admin',  // Assuming last_name, can be retrieved if stored
+                'first_name' => $user->first_name ?? 'Admin', // Use actual field if available
+                'last_name' => $user->last_name ?? 'admin',
                 'email' => $user->email,
-                'mobile' => '0555532701', // Assuming mobile, modify based on your data
+                'mobile' => $user->mobile ?? '0555532701',
                 'email_verified_at' => $user->email_verified_at,
                 'user_type' => $user->user_type,
                 'created_at' => $user->created_at,
@@ -54,9 +59,8 @@ class AuthController extends Controller
             ],
             'token' => $token
         ], 200)->header('x_auth_token', $token)
-          ->header('access-control-expose-headers', 'x_auth_token');
+        ->header('Access-Control-Expose-Headers', 'x_auth_token');
     }
-
     public function registerUser(Request $request)
     {
         // Validate request
@@ -124,4 +128,41 @@ class AuthController extends Controller
             'success' => 'User deleted successfully'
         ], 200);
     }
+    public function getAllUsers(Request $request)
+{
+    // Optional: Add authorization check (e.g., only admins can access this)
+    if (Auth::user()->user_type !== 'admin') {
+        return response()->json(['status' => 403, 'error' => 'Unauthorized action'], 403);
+    }
+
+    // Retrieve all users
+    $users = User::all();
+
+    // Check if there are any users
+    if ($users->isEmpty()) {
+        return response()->json(['status' => 404, 'error' => 'No users found'], 404);
+    }
+
+    // Format the user data
+    $userData = $users->map(function ($user) {
+        return [
+            'id' => $user->id,
+            'email' => $user->email,
+            'user_type' => $user->user_type,
+            'first_name' => $user->first_name ?? 'N/A', // Assuming optional fields, adjust as needed
+            'last_name' => $user->last_name ?? 'N/A',
+            'mobile' => $user->mobile ?? 'N/A',
+            'email_verified_at' => $user->email_verified_at,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at
+        ];
+    });
+
+    // Return success response with all users
+    return response()->json([
+        'status' => 200,
+        'success' => 'Users retrieved successfully',
+        'users' => $userData
+    ], 200);
+}
 }

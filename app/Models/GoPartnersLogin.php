@@ -23,6 +23,7 @@ class GoPartnersLogin extends Model
         'phone_verified',
         'phone_verification_code',
         'document_url',
+        'status'
     ];
 
     protected $hidden = [

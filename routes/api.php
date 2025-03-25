@@ -42,8 +42,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::post('/login', action: [AuthController::class, 'login']);
 Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
-Route::post(uri: 'delete-user', action: [AuthController::class, 'deleteUser']);
 
+Route::delete('/user/{id}', [AuthController::class, 'deleteUser'])->middleware('auth:api');
+Route::get('/users', [AuthController::class, 'getAllUsers'])->middleware('auth:api');
 
 Route::apiResource(name: 'property-types', controller: PropertyTypeController::class);
 
@@ -104,8 +105,10 @@ Route::post('go-partners-register', [GoPartnersLoginController::class, 'register
 Route::post('go-partners-verify-email', [GoPartnersLoginController::class, 'verifyEmail']);
 Route::post('go-partners-login', action: [GoPartnersLoginController::class, 'login']);
 Route::post('go-partners-verify-phone', [GoPartnersLoginController::class, 'verifyPhone']);
-Route::middleware('auth:sanctum')->post('upload-document', [GoPartnersLoginController::class, 'uploadDocument']);
+Route::post('upload-document', [GoPartnersLoginController::class, 'uploadDocument']);
 
+Route::get('partners', [GoPartnersLoginController::class, 'getAll']);
+Route::delete('partners/{id}', [GoPartnersLoginController::class, 'delete']);
 
 Route::apiResource('Videos_url', controller: VideoController::class);
 
