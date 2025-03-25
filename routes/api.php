@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\API\PropertyTypeController;
 use App\Http\Controllers\API\TestimonialController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\WebinarController;
@@ -107,3 +108,6 @@ Route::middleware('auth:sanctum')->post('upload-document', [GoPartnersLoginContr
 
 
 Route::apiResource('Videos_url', controller: VideoController::class);
+
+// routes/api.php
+Route::get('dashboard', [DashboardController::class, 'index']);
