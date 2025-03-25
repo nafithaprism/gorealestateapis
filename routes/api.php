@@ -109,5 +109,3 @@ Route::middleware('auth:sanctum')->post('upload-document', [GoPartnersLoginContr
 
 Route::apiResource('Videos_url', controller: VideoController::class);
 
-// routes/api.php
-Route::get('dashboard', [DashboardController::class, 'index']);
