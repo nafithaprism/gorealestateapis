@@ -96,4 +96,32 @@ class AuthController extends Controller
         ], 201)->header('x_auth_token', $token)
           ->header('access-control-expose-headers', 'x_auth_token');
     }
+    public function deleteUser(Request $request, $id)
+    {
+        // Validate request (e.g., ensure ID is provided and exists)
+        $validator = Validator::make(['id' => $id], [
+            'id' => 'required|exists:users,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => 400, 'error' => 'Validation failed', 'details' => $validator->errors()], 400);
+        }
+
+        // Find the user by ID
+        $user = User::find($id);
+
+        // Optional: Add authorization check (e.g., only allow admins or the user themselves to delete)
+        if (Auth::user()->user_type !== 'admin' && Auth::user()->id !== $user->id) {
+            return response()->json(['status' => 403, 'error' => 'Unauthorized action'], 403);
+        }
+
+        // Delete the user
+        $user->delete();
+
+        // Return success response
+        return response()->json([
+            'status' => 200,
+            'success' => 'User deleted successfully'
+        ], 200);
+    }
 }

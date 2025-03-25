@@ -42,7 +42,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::post('/login', action: [AuthController::class, 'login']);
 Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
-
+Route::post(uri: 'delete-user', action: [AuthController::class, 'deleteUser']);
 
 
 Route::apiResource(name: 'property-types', controller: PropertyTypeController::class);
@@ -109,3 +109,4 @@ Route::middleware('auth:sanctum')->post('upload-document', [GoPartnersLoginContr
 
 Route::apiResource('Videos_url', controller: VideoController::class);
 
+Route::get('dashboard', [DashboardController::class, 'index']);
