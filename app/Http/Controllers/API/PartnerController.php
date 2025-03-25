@@ -9,14 +9,14 @@ use Illuminate\Http\Request;
 class PartnerController extends Controller
 {
     // GET - Get all partners
-    // public function index()
-    // {
-    //     $partners = Partner::all();
-    //     return response()->json([
-    //         'message' => 'Partners retrieved successfully',
-    //         'data' => $partners
-    //     ], 200);
-    // }
+    public function index()
+    {
+        $partners = Partner::all();
+        return response()->json([
+            'message' => 'Partners retrieved successfully',
+            'data' => $partners
+        ], 200);
+    }
 
     // GET - Get single partner
     public function show($id)
