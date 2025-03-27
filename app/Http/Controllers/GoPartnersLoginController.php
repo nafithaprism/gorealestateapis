@@ -171,50 +171,50 @@ class GoPartnersLoginController extends Controller
     }
 
     public function forgotPassword(Request $request)
-{
-    // Validate the request
-    $validator = Validator::make($request->all(), [
-        'email' => 'required|email|exists:go_partners_logins,email', // Use the correct model here (e.g., GoPartnersLogin)
-    ]);
+    {
+        // Validate the request
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:go_partners_logins,email',
+        ]);
 
-    if ($validator->fails()) {
-        return response()->json([
-            'status' => 400,
-            'error' => 'Validation failed',
-            'details' => $validator->errors()
-        ], 400);
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 400,
+                'error' => 'Validation failed',
+                'details' => $validator->errors()
+            ], 400);
+        }
+
+        // Customize the reset URL
+        ResetPasswordNotification::createUrlUsing(function ($notifiable, $token) {
+            return url('/reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
+        });
+
+        // Send password reset link using the custom broker
+        $status = Password::broker('go_partners')->sendResetLink(
+            $request->only('email')
+        );
+
+        // Handle different status responses
+        switch ($status) {
+            case Password::RESET_LINK_SENT:
+                return response()->json([
+                    'status' => 200,
+                    'success' => 'Password reset link sent to your email'
+                ], 200);
+            case Password::RESET_THROTTLED:
+                return response()->json([
+                    'status' => 429,
+                    'error' => 'Too many reset attempts. Please wait a minute and try again.'
+                ], 429);
+            default:
+                return response()->json([
+                    'status' => 500,
+                    'error' => 'Failed to send reset link',
+                    'details' => $status
+                ], 500);
+        }
     }
-
-    // Customize the reset URL to point to a custom public/reset-password.html page
-    ResetPasswordNotification::createUrlUsing(function ($notifiable, $token) {
-        return url('/reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
-    });
-
-    // Send password reset link
-    $status = Password::sendResetLink(
-        $request->only('email')
-    );
-
-    // Handle different status responses
-    switch ($status) {
-        case Password::RESET_LINK_SENT:
-            return response()->json([
-                'status' => 200,
-                'success' => 'Password reset link sent to your email'
-            ], 200);
-        case Password::RESET_THROTTLED:
-            return response()->json([
-                'status' => 429,
-                'error' => 'Too many reset attempts. Please wait a minute and try again.'
-            ], 429);
-        default:
-            return response()->json([
-                'status' => 500,
-                'error' => 'Failed to send reset link',
-                'details' => $status
-            ], 500);
-    }
-}
 
 public function resetPassword(Request $request)
 {
