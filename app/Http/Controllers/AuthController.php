@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 
 class AuthController extends Controller
 {
@@ -164,5 +166,89 @@ class AuthController extends Controller
         'success' => 'Users retrieved successfully',
         'users' => $userData
     ], 200);
+}
+public function forgotPassword(Request $request)
+{
+    // Validate the request
+    $validator = Validator::make($request->all(), [
+        'email' => 'required|email|exists:users,email',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 400,
+            'error' => 'Validation failed',
+            'details' => $validator->errors()
+        ], 400);
+    }
+
+    // Customize the reset URL to point to the public/reset-password.html file
+    ResetPasswordNotification::createUrlUsing(function ($notifiable, $token) {
+        return url('/reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
+    });
+
+    // Send password reset link
+    $status = Password::sendResetLink(
+        $request->only('email')
+    );
+
+    // Handle different status responses
+    switch ($status) {
+        case Password::RESET_LINK_SENT:
+            return response()->json([
+                'status' => 200,
+                'success' => 'Password reset link sent to your email'
+            ], 200);
+        case Password::RESET_THROTTLED:
+            return response()->json([
+                'status' => 429,
+                'error' => 'Too many reset attempts. Please wait a minute and try again.'
+            ], 429);
+        default:
+            return response()->json([
+                'status' => 500,
+                'error' => 'Failed to send reset link',
+                'details' => $status
+            ], 500);
+    }
+}
+
+// Your resetPassword method remains unchanged
+public function resetPassword(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'token' => 'required',
+        'email' => 'required|email|exists:users,email',
+        'password' => 'required|min:8|confirmed',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 400,
+            'error' => 'Validation failed',
+            'details' => $validator->errors()
+        ], 400);
+    }
+
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            $user->password = Hash::make($password);
+            $user->save();
+        }
+    );
+
+    if ($status === Password::PASSWORD_RESET) {
+        return response()->json([
+            'status' => 200,
+            'success' => 'Password has been reset successfully'
+        ], 200);
+    }
+
+    return response()->json([
+        'status' => 400,
+        'error' => 'Invalid token or reset failed',
+        'details' => $status
+    ], 400);
 }
 }

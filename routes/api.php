@@ -45,6 +45,9 @@ Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
 
 Route::delete('/user/{id}', [AuthController::class, 'deleteUser'])->middleware('auth:api');
 Route::get('/users', [AuthController::class, 'getAllUsers'])->middleware('auth:api');
+Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
 
 Route::apiResource(name: 'property-types', controller: PropertyTypeController::class);
 
