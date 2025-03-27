@@ -46,7 +46,8 @@ Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
 Route::delete('/user/{id}', [AuthController::class, 'deleteUser'])->middleware('auth:api');
 Route::get('/users', [AuthController::class, 'getAllUsers'])->middleware('auth:api');
 Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/reset-password', action: [AuthController::class, 'resetPassword']);
+Route::patch('/users/{id}', action: [AuthController::class, 'updateProfile']);
 
 
 Route::apiResource(name: 'property-types', controller: PropertyTypeController::class);
@@ -85,9 +86,7 @@ Route::apiResource(name: 'career', controller: CareerController::class);
 // partner
 Route::apiResource(name: 'partner', controller: PartnerController::class);
 
-
 Route::apiResource(name: 'industry_reports', controller: IndustryReportController::class);
-
 Route::apiResource('case-study', controller: CaseStudyController::class);
 
 
@@ -109,6 +108,10 @@ Route::post('go-partners-verify-email', [GoPartnersLoginController::class, 'veri
 Route::post('go-partners-login', action: [GoPartnersLoginController::class, 'login']);
 Route::post('go-partners-verify-phone', [GoPartnersLoginController::class, 'verifyPhone']);
 Route::post('upload-document', [GoPartnersLoginController::class, 'uploadDocument']);
+Route::post('/forgot-password', [GoPartnersLoginController::class, 'forgotPassword']);
+Route::post('/reset-password', [GoPartnersLoginController::class, 'resetPassword']);
+Route::patch('/partner/update-profile/{id}', [GoPartnersLoginController::class, 'updateProfile']);
+
 
 Route::get('partners', [GoPartnersLoginController::class, 'getAll']);
 Route::delete('partners/{id}', [GoPartnersLoginController::class, 'delete']);

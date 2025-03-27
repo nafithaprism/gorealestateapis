@@ -10,6 +10,9 @@ use Illuminate\Support\Str;
 use GuzzleHttp\Psr7\Stream;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 
 class GoPartnersLoginController extends Controller
 {
@@ -85,6 +88,49 @@ class GoPartnersLoginController extends Controller
             'data' => $partners
         ], 200);
     }
+    public function updateProfile(Request $request, $id)
+{
+    $validated = $request->validate([
+        'first_name' => 'sometimes|string|max:255',
+        'last_name' => 'sometimes|string|max:255',
+        'email' => 'sometimes|string|email|max:255|unique:go_partners_logins,email,' . $id,
+        'phone' => 'sometimes|string|max:255|unique:go_partners_logins,phone,' . $id,
+        'password' => 'sometimes|string|min:8',
+    ]);
+
+    $partner = GoPartnersLogin::find($id);
+
+    if (!$partner) {
+        return response()->json([
+            'message' => 'Partner not found',
+        ], 404);
+    }
+
+    // Update fields only if they are provided
+    if ($request->has('first_name')) {
+        $partner->first_name = $request->first_name;
+    }
+    if ($request->has('last_name')) {
+        $partner->last_name = $request->last_name;
+    }
+    if ($request->has('email')) {
+        $partner->email = $request->email;
+        $partner->email_verified = false; // Require re-verification if email is changed
+    }
+    if ($request->has('phone')) {
+        $partner->phone = $request->phone;
+    }
+    if ($request->has('password')) {
+        $partner->password = Hash::make($request->password);
+    }
+
+    $partner->save();
+
+    return response()->json([
+        'message' => 'Profile updated successfully',
+        'partner' => $partner,
+    ], 200);
+}
     public function register(Request $request)
     {
         $validated = $request->validate([
@@ -123,6 +169,91 @@ class GoPartnersLoginController extends Controller
             'partner_id' => $partner->id,
         ], 201);
     }
+
+    public function forgotPassword(Request $request)
+{
+    // Validate the request
+    $validator = Validator::make($request->all(), [
+        'email' => 'required|email|exists:go_partners_logins,email', // Use the correct model here (e.g., GoPartnersLogin)
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 400,
+            'error' => 'Validation failed',
+            'details' => $validator->errors()
+        ], 400);
+    }
+
+    // Customize the reset URL to point to a custom public/reset-password.html page
+    ResetPasswordNotification::createUrlUsing(function ($notifiable, $token) {
+        return url('/reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
+    });
+
+    // Send password reset link
+    $status = Password::sendResetLink(
+        $request->only('email')
+    );
+
+    // Handle different status responses
+    switch ($status) {
+        case Password::RESET_LINK_SENT:
+            return response()->json([
+                'status' => 200,
+                'success' => 'Password reset link sent to your email'
+            ], 200);
+        case Password::RESET_THROTTLED:
+            return response()->json([
+                'status' => 429,
+                'error' => 'Too many reset attempts. Please wait a minute and try again.'
+            ], 429);
+        default:
+            return response()->json([
+                'status' => 500,
+                'error' => 'Failed to send reset link',
+                'details' => $status
+            ], 500);
+    }
+}
+
+public function resetPassword(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'token' => 'required',
+        'email' => 'required|email|exists:go_partners_logins,email', // Use the correct model here
+        'password' => 'required|min:8|confirmed',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 400,
+            'error' => 'Validation failed',
+            'details' => $validator->errors()
+        ], 400);
+    }
+
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            $user->password = Hash::make($password);
+            $user->save();
+        }
+    );
+
+    if ($status === Password::PASSWORD_RESET) {
+        return response()->json([
+            'status' => 200,
+            'success' => 'Password has been reset successfully'
+        ], 200);
+    }
+
+    return response()->json([
+        'status' => 400,
+        'error' => 'Invalid token or reset failed',
+        'details' => $status
+    ], 400);
+}
+
 
     public function verifyEmail(Request $request)
     {

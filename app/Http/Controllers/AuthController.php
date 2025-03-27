@@ -12,6 +12,71 @@ use Illuminate\Auth\Notifications\ResetPassword as ResetPasswordNotification;
 
 class AuthController extends Controller
 {
+
+    public function updateProfile(Request $request, $id)
+{
+    // Find the user by ID
+    $user = User::find($id);
+
+    // Check if user exists
+    if (!$user) {
+        return response()->json([
+            'status' => 404,
+            'error' => 'User not found'
+        ], 404);
+    }
+
+    // Validate request data
+    $validator = Validator::make($request->all(), [
+        'first_name' => 'sometimes|string|max:255',
+        'last_name' => 'sometimes|string|max:255',
+        'mobile' => 'sometimes|string|max:15', // Adjust max length as needed
+        'email' => 'sometimes|email|unique:users,email,' . $id, // Ensure email is unique except for current user
+        'password' => 'sometimes|min:8|confirmed', // Only validate password if provided
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 400,
+            'error' => 'Validation failed',
+            'details' => $validator->errors()
+        ], 400);
+    }
+
+    // Fields that can be updated
+    $updateData = $request->only([
+        'first_name',
+        'last_name',
+        'mobile',
+        'email'
+    ]);
+
+    // If password is provided, hash it and add to update data
+    if ($request->filled('password')) {
+        $updateData['password'] = Hash::make($request->password);
+    }
+
+    // Update the user with only the provided fields
+    $user->update($updateData);
+
+    // Return updated user data
+    return response()->json([
+        'status' => 200,
+        'success' => 'Profile updated successfully',
+        'user' => [
+            'id' => $user->id,
+            'first_name' => $user->first_name ?? 'N/A',
+            'last_name' => $user->last_name ?? 'N/A',
+            'email' => $user->email,
+            'mobile' => $user->mobile ?? 'N/A',
+            'user_type' => $user->user_type,
+            'email_verified_at' => $user->email_verified_at,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at
+        ]
+    ], 200);
+}
+
     public function login(Request $request)
     {
         // Validate request
