@@ -187,14 +187,13 @@ class GoPartnersLoginController extends Controller
 
         // Customize the reset URL
         ResetPasswordNotification::createUrlUsing(function ($notifiable, $token) {
-            return url('/reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
+            return url(path: '/Go-Partners-reset-password.html?token=' . $token . '&email=' . urlencode($notifiable->email));
         });
 
-        // Send password reset link using the custom broker
-        $status = Password::broker('go_partners')->sendResetLink(
+        // Send password reset link
+        $status = Password::sendResetLink(
             $request->only('email')
         );
-
         // Handle different status responses
         switch ($status) {
             case Password::RESET_LINK_SENT:

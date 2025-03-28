@@ -108,8 +108,8 @@ Route::post('go-partners-verify-email', [GoPartnersLoginController::class, 'veri
 Route::post('go-partners-login', action: [GoPartnersLoginController::class, 'login']);
 Route::post('go-partners-verify-phone', [GoPartnersLoginController::class, 'verifyPhone']);
 Route::post('upload-document', [GoPartnersLoginController::class, 'uploadDocument']);
-Route::post('/forgot-password', [GoPartnersLoginController::class, 'forgotPassword']);
-Route::post('/reset-password', [GoPartnersLoginController::class, 'resetPassword']);
+Route::post('go-partners-forgot-password', [GoPartnersLoginController::class, 'forgotPassword']);
+Route::post('go-partners-reset-password', [GoPartnersLoginController::class, 'resetPassword']);
 Route::patch('/partner/update-profile/{id}', [GoPartnersLoginController::class, 'updateProfile']);
 
 
