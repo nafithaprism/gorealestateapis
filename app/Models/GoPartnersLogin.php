@@ -1,16 +1,16 @@
 <?php
 
-
-// app/Models/GoPartnersLogin.php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Auth\Passwords\CanResetPassword;
 
 class GoPartnersLogin extends Model
 {
+    use HasApiTokens, CanResetPassword;
+
     protected $table = 'go_partners_logins';
-    use HasApiTokens;
 
     protected $fillable = [
         'first_name',

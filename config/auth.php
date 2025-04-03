@@ -70,6 +70,11 @@ return [
             'model' => App\Models\User::class,
         ],
 
+        'go_partners' => [
+        'driver' => 'eloquent',
+        'model' => App\Models\GoPartnersLogin::class,
+    ],
+
         // 'users' => [
         //     'driver' => 'database',
         //     'table' => 'users',
@@ -98,6 +103,12 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+        'go_partners' => [
+        'provider' => 'go_partners',
+        'table' => 'password_resets', // Reuse the same table or create a new one if needed
+        'expire' => 60,
+        'throttle' => 60,
+    ],
     ],
 
     /*
