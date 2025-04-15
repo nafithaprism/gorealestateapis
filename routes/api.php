@@ -23,8 +23,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\WebinarController;
-use App\Models\BannerForm;
-
+use App\Http\Controllers\ProjectContactFormController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -119,3 +118,6 @@ Route::delete('partners/{id}', [GoPartnersLoginController::class, 'delete']);
 Route::apiResource('Videos_url', controller: VideoController::class);
 
 Route::get('dashboard', [DashboardController::class, 'index']);
+
+
+Route::apiResource('project-contact-form', ProjectContactFormController::class);
