@@ -8,33 +8,87 @@ use Illuminate\Http\Request;
 
 class BannerFormController extends Controller
 {
-    // Get all banner form submissions
+    // GET /api/banner-forms
     public function index()
     {
-        $bannerForms = BannerForm::all();
-        return response()->json($bannerForms, 200);
+        return response()->json(BannerForm::all(), 200);
     }
 
-    // Submit a new banner form
+    // POST /api/banner-forms
     public function store(Request $request)
     {
         $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
+            'nationality' => 'nullable|string|max:255',
+            'country_of_residence' => 'nullable|string|max:255',
             'company' => 'nullable|string|max:255',
-            'phone' => 'required|string|max:20',
+            'number' => 'required|string|max:20',
             'email' => 'required|email|max:255',
-            'purchase_objective' => 'required|string|max:255',
-            'min_budget' => 'required|numeric',
-            'max_budget' => 'required|numeric|gte:min_budget',
+            'purchase_objective' => 'required|string|in:buy to live,invest to flip {sale},invest to live {short term / holiday concept}',
+            'purchase_primary_goal' => 'nullable|string|max:255',
+            'budget' => 'nullable|numeric',
             'message' => 'nullable|string',
+            'date' => 'nullable|date',
         ]);
 
-        $bannerForm = BannerForm::create($request->only(
-            'first_name', 'last_name', 'company', 'phone', 'email',
-            'purchase_objective', 'min_budget', 'max_budget', 'message'
-        ));
+        $bannerForm = BannerForm::create($request->all());
 
         return response()->json($bannerForm, 201);
+    }
+
+    // GET /api/banner-forms/{id}
+    public function show($id)
+    {
+        $bannerForm = BannerForm::find($id);
+
+        if (!$bannerForm) {
+            return response()->json(['message' => 'Form not found'], 404);
+        }
+
+        return response()->json($bannerForm, 200);
+    }
+
+    // PUT /api/banner-forms/{id}
+    public function update(Request $request, $id)
+    {
+        $bannerForm = BannerForm::find($id);
+
+        if (!$bannerForm) {
+            return response()->json(['message' => 'Form not found'], 404);
+        }
+
+        $request->validate([
+            'first_name' => 'sometimes|required|string|max:255',
+            'last_name' => 'sometimes|required|string|max:255',
+            'nationality' => 'nullable|string|max:255',
+            'country_of_residence' => 'nullable|string|max:255',
+            'company' => 'nullable|string|max:255',
+            'number' => 'sometimes|required|string|max:20',
+            'email' => 'sometimes|required|email|max:255',
+            'purchase_objective' => 'sometimes|required|string|in:buy to live,invest to flip {sale},invest to live {short term / holiday concept}',
+            'purchase_primary_goal' => 'nullable|string|max:255',
+            'budget' => 'nullable|numeric',
+            'message' => 'nullable|string',
+            'date' => 'nullable|date',
+        ]);
+
+        $bannerForm->update($request->all());
+
+        return response()->json($bannerForm, 200);
+    }
+
+    // DELETE /api/banner-forms/{id}
+    public function destroy($id)
+    {
+        $bannerForm = BannerForm::find($id);
+
+        if (!$bannerForm) {
+            return response()->json(['message' => 'Form not found'], 404);
+        }
+
+        $bannerForm->delete();
+
+        return response()->json(['message' => 'Form deleted'], 200);
     }
 }
