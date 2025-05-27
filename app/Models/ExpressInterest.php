@@ -17,5 +17,6 @@ class ExpressInterest extends Model
         'purchase_objective',
         'budget',
         'message',
+        'project_id',
     ];
 }

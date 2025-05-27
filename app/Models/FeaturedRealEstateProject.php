@@ -18,6 +18,8 @@ class FeaturedRealEstateProject extends Model
         'project_go_flyer',
         'inner_page_content',
         'banner_image',
+        'route',
+        'project_plan',
         'content',
     ];
 }

@@ -15,12 +15,14 @@ class FeaturedRealEstateProjectsController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'project_plan' => 'required|string',
             'developer_logo' => 'nullable|string',
             'feature_image' => 'nullable|string',
             'payment_plan' => ['nullable', 'regex:/^\d{1,3}\|\d{1,3}\|\d{1,3}$/'],
             'location' => 'required|string',
             'project_name' => 'required|string',
             'project_developer' => 'required|string',
+            'route' => 'required|string',
             'price' => 'required|numeric',
             'project_factsheet' => 'nullable|url',
             'project_go_flyer' => 'nullable|url',
@@ -37,14 +39,14 @@ class FeaturedRealEstateProjectsController extends Controller
         ], 201);
     }
 
-    public function show($id)
-    {
-        $project = FeaturedRealEstateProject::find($id);
-        return $project
-            ? response()->json($project)
-            : response()->json(['message' => 'Project not found.'], 404);
-    }
+   public function show($route)
+{
+    $project = FeaturedRealEstateProject::where('route', $route)->first();
 
+    return $project
+        ? response()->json($project)
+        : response()->json(['message' => 'Project not found.'], 404);
+}
     public function update(Request $request, $id)
     {
         $project = FeaturedRealEstateProject::find($id);
@@ -55,11 +57,13 @@ class FeaturedRealEstateProjectsController extends Controller
 
         $validated = $request->validate([
             'developer_logo' => 'nullable|string',
+            'project_plan' => 'required|string',
             'feature_image' => 'nullable|string',
             'payment_plan' => ['nullable', 'regex:/^\d{1,3}\|\d{1,3}\|\d{1,3}$/'],
             'location' => 'nullable|string',
             'project_name' => 'nullable|string',
             'project_developer' => 'nullable|string',
+            'route' => 'required|string',
             'price' => 'nullable|numeric',
             'project_factsheet' => 'nullable|url',
             'project_go_flyer' => 'nullable|url',
