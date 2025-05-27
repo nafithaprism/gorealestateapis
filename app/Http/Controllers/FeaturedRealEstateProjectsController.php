@@ -24,10 +24,10 @@ class FeaturedRealEstateProjectsController extends Controller
             'project_developer' => 'required|string',
             'route' => 'required|string',
             'price' => 'required|numeric',
-            'project_factsheet' => 'nullable|url',
-            'project_go_flyer' => 'nullable|url',
+            'project_factsheet' => 'nullable|string',
+            'project_go_flyer' => 'nullable|string',
             'inner_page_content' => 'nullable|string',
-            'banner_image' => 'nullable|url',
+            'banner_image' => 'nullable|string',
             'content' => 'nullable|string',
         ]);
 
@@ -65,7 +65,7 @@ class FeaturedRealEstateProjectsController extends Controller
             'project_developer' => 'nullable|string',
             'route' => 'required|string',
             'price' => 'nullable|numeric',
-            'project_factsheet' => 'nullable|url',
+            'project_factsheet' => 'nullable|string',
             'project_go_flyer' => 'nullable|url',
             'inner_page_content' => 'nullable|string',
             'banner_image' => 'nullable|url',
