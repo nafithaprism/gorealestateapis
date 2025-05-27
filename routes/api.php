@@ -24,6 +24,8 @@ use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\WebinarController;
 use App\Http\Controllers\ProjectContactFormController;
+use App\Http\Controllers\ExpressYourIntrestController;
+use App\Http\Controllers\FeaturedRealEstateProjectsController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -121,3 +123,9 @@ Route::get('dashboard', [DashboardController::class, 'index']);
 
 
 Route::apiResource('project-contact-form', ProjectContactFormController::class);
+
+// Express your interest routes
+Route::apiResource('expressYourIntrest', ExpressYourIntrestController::class);
+
+// Featured Real Estate Projects routes
+Route::apiResource('featured-real-estate-projects', FeaturedRealEstateProjectsController::class);
