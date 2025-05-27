@@ -124,8 +124,38 @@ Route::get('dashboard', [DashboardController::class, 'index']);
 
 Route::apiResource('project-contact-form', ProjectContactFormController::class);
 
-// Express your interest routes
-Route::apiResource('expressYourIntrest', ExpressYourIntrestController::class);
-
 // Featured Real Estate Projects routes
-Route::apiResource('featured-real-estate-projects', FeaturedRealEstateProjectsController::class);
+
+// GET all projects
+Route::get('featured-real-estate-projects', [FeaturedRealEstateProjectsController::class, 'index']);
+
+// GET single project
+Route::get('featured-real-estate-projects/{id}', [FeaturedRealEstateProjectsController::class, 'show']);
+
+// POST new project
+Route::post('featured-real-estate-projects', [FeaturedRealEstateProjectsController::class, 'store']);
+
+// PUT/PATCH update project
+Route::put('featured-real-estate-projects/{id}', [FeaturedRealEstateProjectsController::class, 'update']);
+Route::patch('featured-real-estate-projects/{id}', [FeaturedRealEstateProjectsController::class, 'update']);
+
+// DELETE project
+Route::delete('featured-real-estate-projects/{id}', [FeaturedRealEstateProjectsController::class, 'destroy']);
+
+// Express your interest routes
+
+// GET all
+Route::get('expressYourIntrest', [ExpressYourIntrestController::class, 'index']);
+
+// GET single
+Route::get('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'show']);
+
+// POST (create)
+Route::post('expressYourIntrest', [ExpressYourIntrestController::class, 'store']);
+
+// PUT/PATCH (update)
+Route::put('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'update']);
+Route::patch('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'update']);
+
+// DELETE
+Route::delete('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'destroy']);
