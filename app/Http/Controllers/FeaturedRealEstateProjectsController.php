@@ -47,38 +47,47 @@ class FeaturedRealEstateProjectsController extends Controller
         ? response()->json($project)
         : response()->json(['message' => 'Project not found.'], 404);
 }
-    public function update(Request $request, $id)
-    {
-        $project = FeaturedRealEstateProject::find($id);
+    public function update(Request $request, $route)
+{
+    $project = FeaturedRealEstateProject::where('route', $route)->first();
 
-        if (!$project) {
-            return response()->json(['message' => 'Project not found.'], 404);
-        }
-
-        $validated = $request->validate([
-            'developer_logo' => 'nullable|string',
-            'project_plan' => 'required|string',
-            'feature_image' => 'nullable|string',
-            'payment_plan' => ['nullable', 'regex:/^\d{1,3}\|\d{1,3}\|\d{1,3}$/'],
-            'location' => 'nullable|string',
-            'project_name' => 'nullable|string',
-            'project_developer' => 'nullable|string',
-            'route' => 'required|string',
-            'price' => 'nullable|numeric',
-            'project_factsheet' => 'nullable|string',
-            'project_go_flyer' => 'nullable|url',
-            'inner_page_content' => 'nullable|string',
-            'banner_image' => 'nullable|url',
-            'content' => 'nullable|string',
-        ]);
-
-        $project->update($validated);
-
-        return response()->json([
-            'message' => 'Project updated successfully.',
-            'data' => $project
-        ]);
+    if (!$project) {
+        return response()->json(['message' => 'Project not found.'], 404);
     }
+
+    $validated = $request->validate([
+        'developer_logo' => 'nullable|string',
+        'project_plan' => 'required|string',
+        'feature_image' => 'nullable|string',
+        'payment_plan' => ['nullable', 'regex:/^\d{1,3}\|\d{1,3}\|\d{1,3}$/'],
+        'location' => 'nullable|string',
+        'project_name' => 'nullable|string',
+        'project_developer' => 'nullable|string',
+        'route' => 'required|string', // You can keep this if you allow changing the route
+        'price' => 'nullable|numeric',
+        'project_factsheet' => 'nullable|string',
+        'project_go_flyer' => 'nullable|url',
+        'inner_page_content' => 'nullable|string',
+        'banner_image' => 'nullable|url',
+        'content' => 'nullable|string',
+    ]);
+
+    // Optional: Handle uniqueness of new route (if it's changing)
+    if ($validated['route'] !== $route) {
+        $exists = FeaturedRealEstateProject::where('route', $validated['route'])->exists();
+        if ($exists) {
+            return response()->json(['message' => 'Route must be unique.'], 422);
+        }
+    }
+
+    $project->update($validated);
+
+    return response()->json([
+        'message' => 'Project updated successfully.',
+        'data' => $project
+    ]);
+}
+
 
     public function destroy($id)
     {
