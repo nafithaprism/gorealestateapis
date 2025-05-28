@@ -19,4 +19,10 @@ class ExpressInterest extends Model
         'message',
         'project_id',
     ];
+
+
+    public function project()
+    {
+        return $this->belongsTo(FeaturedRealEstateProject::class, 'project_id');
+    }
 }

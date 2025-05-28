@@ -8,9 +8,11 @@ use Illuminate\Http\Request;
 class ExpressYourIntrestController extends Controller
 {
     public function index()
-    {
-        return response()->json(ExpressInterest::all());
-    }
+{
+    $interests = ExpressInterest::with('project')->get();
+
+    return response()->json($interests);
+}
 
     public function store(Request $request)
     {
@@ -36,15 +38,15 @@ class ExpressYourIntrestController extends Controller
     }
 
     public function show($id)
-    {
-        $interest = ExpressInterest::find($id);
+{
+    $interest = ExpressInterest::with('project')->find($id);
 
-        if (!$interest) {
-            return response()->json(['message' => 'Record not found.'], 404);
-        }
-
-        return response()->json($interest);
+    if (!$interest) {
+        return response()->json(['message' => 'Record not found.'], 404);
     }
+
+    return response()->json($interest);
+}
 
     public function update(Request $request, $id)
     {
