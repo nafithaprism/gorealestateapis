@@ -66,9 +66,9 @@ class FeaturedRealEstateProjectsController extends Controller
         'route' => 'required|string', // You can keep this if you allow changing the route
         'price' => 'nullable|numeric',
         'project_factsheet' => 'nullable|string',
-        'project_go_flyer' => 'nullable|url',
+        'project_go_flyer' => 'nullable|string',
         'inner_page_content' => 'nullable|string',
-        'banner_image' => 'nullable|url',
+        'banner_image' => 'nullable|string',
         'content' => 'nullable|string',
     ]);
 
