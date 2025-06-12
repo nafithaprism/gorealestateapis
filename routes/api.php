@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\API\PropertyTypeController;
 use App\Http\Controllers\API\TestimonialController;
+use App\Http\Controllers\CommercialProjectsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\VideoController;
@@ -26,6 +27,10 @@ use App\Http\Controllers\WebinarController;
 use App\Http\Controllers\ProjectContactFormController;
 use App\Http\Controllers\ExpressYourIntrestController;
 use App\Http\Controllers\FeaturedRealEstateProjectsController;
+use App\Http\Controllers\InvestmentProjectsController;
+use App\Http\Controllers\ResidentialProjectsController;
+use Illuminate\Support\Facades\Artisan;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -159,3 +164,36 @@ Route::patch('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'u
 
 // DELETE
 Route::delete('expressYourIntrest/{id}', [ExpressYourIntrestController::class, 'destroy']);
+
+// Commercial Projects routes
+Route::get('commercial-projects', [CommercialProjectsController::class, 'index']);
+Route::get('commercial-projects/{id}', [CommercialProjectsController::class, 'show']);
+Route::post('commercial-projects', [CommercialProjectsController::class, 'store']);
+Route::put('commercial-projects/{id}', [CommercialProjectsController::class, 'update']);
+Route::patch('commercial-projects/{id}', [CommercialProjectsController::class, 'update']);
+Route::delete('commercial-projects/{id}', [CommercialProjectsController::class, 'destroy']);
+
+// Residential Projects routes
+
+Route::get('residential-projects', [ResidentialProjectsController::class, 'index']);
+Route::get('residential-projects/{id}', [ResidentialProjectsController::class, 'show']);
+Route::post('residential-projects', [ResidentialProjectsController::class, 'store']);
+Route::put('residential-projects/{id}', [ResidentialProjectsController::class, 'update']);
+Route::patch('residential-projects/{id}', [ResidentialProjectsController::class, 'update']);
+Route::delete('residential-projects/{id}', [ResidentialProjectsController::class, 'destroy']);
+
+// Investment Projects routes
+
+Route::get(uri: 'investment-projects', action: [InvestmentProjectsController::class, 'index']);
+Route::get('investment-projects/{id}', action: [InvestmentProjectsController::class, 'show']);
+Route::post('investment-projects', [InvestmentProjectsController::class, 'store']);
+Route::put('investment-projects/{id}', [InvestmentProjectsController::class, 'update']);
+Route::patch('investment-projects/{id}', [InvestmentProjectsController::class, 'update']);
+Route::delete('investment-projects/{id}', [InvestmentProjectsController::class, 'destroy']);
+
+Route::get('/clear-cache', function () {
+    Artisan::call('config:cache');
+    Artisan::call('route:cache');
+    Artisan::call('view:clear');
+    return 'Cache cleared';
+});
