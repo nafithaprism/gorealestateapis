@@ -44,9 +44,9 @@ class InvestmentProjectsController extends Controller
             : response()->json(['message' => 'Project not found.'], 404);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, $route)
     {
-        $project = InvestmentProject::where('id', $id)->first();
+        $project = InvestmentProject::where('route', $route)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);
@@ -74,7 +74,7 @@ class InvestmentProjectsController extends Controller
 
     public function destroy($id)
     {
-        $project = InvestmentProject::where('route', operator: $id)->first();
+        $project = InvestmentProject::where(column: 'id', operator: $id)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);

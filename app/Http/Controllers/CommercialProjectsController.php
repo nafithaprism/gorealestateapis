@@ -45,9 +45,9 @@ class CommercialProjectsController extends Controller
             : response()->json(['message' => 'Project not found.'], 404);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, $route)
     {
-        $project = CommercialProject::where('id', $id)->first();
+        $project = CommercialProject::where('route', $route)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);
@@ -76,7 +76,7 @@ class CommercialProjectsController extends Controller
 
     public function destroy($id)
     {
-        $project = CommercialProject::where('route', operator: $id)->first();
+        $project = CommercialProject::where(column: 'id', operator: $id)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);

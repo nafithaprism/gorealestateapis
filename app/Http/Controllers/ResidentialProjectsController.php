@@ -45,9 +45,9 @@ class ResidentialProjectsController extends Controller
             : response()->json(['message' => 'Project not found.'], 404);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, $route)
     {
-        $project = ResidentialProject::where('id', $id)->first();
+        $project = ResidentialProject::where('route', $route)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);
@@ -76,7 +76,7 @@ class ResidentialProjectsController extends Controller
 
     public function destroy($id)
     {
-        $project = ResidentialProject::where('route', operator: $id)->first();
+        $project = ResidentialProject::where(column: 'id', operator: $id)->first();
 
         if (!$project) {
             return response()->json(['message' => 'Project not found.'], 404);
