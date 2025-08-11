@@ -29,6 +29,7 @@ class FeaturedRealEstateProjectsController extends Controller
             'inner_page_content' => 'nullable|string',
             'banner_image' => 'nullable|string',
             'content' => 'nullable|string',
+             'anticipated_completion_date' => 'nullable|date', 
         ]);
 
         $project = FeaturedRealEstateProject::create($validated);
@@ -70,6 +71,7 @@ class FeaturedRealEstateProjectsController extends Controller
         'inner_page_content' => 'nullable|string',
         'banner_image' => 'nullable|string',
         'content' => 'nullable|string',
+         'anticipated_completion_date' => 'nullable|date', 
     ]);
 
     // Optional: Handle uniqueness of new route (if it's changing)

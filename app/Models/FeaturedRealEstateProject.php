@@ -21,5 +21,6 @@ class FeaturedRealEstateProject extends Model
         'route',
         'project_plan',
         'content',
+        'anticipated_completion_date', 
     ];
 }
