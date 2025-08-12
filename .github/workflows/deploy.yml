@@ -2,7 +2,7 @@ name: Deploy Laravel to Hostinger
 
 on:
   push:
-    branches: [ "main" ]   # change if you deploy from another branch
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -65,7 +65,6 @@ jobs:
             -e "ssh -p ${PORT}" \
             release/ "${USER}@${HOST}:${TARGET}/"
 
-      # Run artisan commands on the server (uses your existing .env) + enforce perms
       - name: Post-deploy artisan & permissions
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
@@ -79,20 +78,20 @@ jobs:
           ssh-add - <<< "${SSH_PRIVATE_KEY}"
           PHP_BIN="${PHP_CLI:-php}"
 
-          ssh -p "${PORT}" "${USER}@${HOST}" <<'EOF'
+          # NOTE: unquoted EOF so ${TARGET} and ${PHP_BIN} expand locally
+          ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
           set -e
           cd "${TARGET}"
 
-          # Ensure required dirs/files exist
+          # ensure dirs/files
           mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache || true
           [ -f storage/logs/laravel.log ] || touch storage/logs/laravel.log || true
 
-          # Permissions: dirs 775, files 664 (shared hosting friendly)
+          # perms: dirs 775, files 664
           chmod 775 bootstrap || true
           chmod 775 bootstrap/cache || true
           find bootstrap/cache -type d -exec chmod 775 {} \; || true
           find bootstrap/cache -type f -exec chmod 664 {} \; || true
-
           find storage -type d -exec chmod 775 {} \; || true
           find storage -type f -exec chmod 664 {} \; || true
 
@@ -106,15 +105,15 @@ jobs:
           # Quick visibility
           ls -ld storage bootstrap bootstrap/cache || true
           EOF
+
       - name: Health check API
         run: |
           echo "Checking API health..."
-          HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}\n" https://prismcloudhosting.com/GoRealEstateApis/public/api/featured-real-estate-project)
+          URL="https://prismcloudhosting.com/GoRealEstateApis/public/api/featured-real-estate-projects"
+          HTTP_STATUS=$(curl -s -o /tmp/hc_body -w "%{http_code}" "$URL")
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "❌ API health check failed with HTTP $HTTP_STATUS"
+            echo "❌ Health check failed ($HTTP_STATUS). Response body:"
+            head -c 400 /tmp/hc_body || true
             exit 1
           fi
           echo "✅ API responded with HTTP $HTTP_STATUS"
-
-
-
