@@ -30,5 +30,11 @@ return [
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
+    'bunny' => [
+    'api_key'      => env('BUNNYCDN_API_KEY'),
+    'storage_zone' => env('BUNNYCDN_STORAGE_ZONE'),
+    'hostname'     => env('BUNNYCDN_HOSTNAME', 'storage.bunnycdn.com'), // no https://
+    'pull_zone'    => env('BUNNYCDN_PULL_ZONE'), // with https://
+],
 
 ];
