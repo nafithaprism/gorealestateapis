@@ -59,13 +59,14 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add - <<< "${SSH_PRIVATE_KEY}"
           rsync -az --delete \
+            --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
             --exclude=".env" \
             --exclude="storage/" \
             -e "ssh -p ${PORT}" \
             release/ "${USER}@${HOST}:${TARGET}/"
 
-      # Run artisan commands on the server (uses your existing .env)
-      - name: Post-deploy artisan
+      # Run artisan commands on the server (uses your existing .env) + enforce perms
+      - name: Post-deploy artisan & permissions
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
           HOST: ${{ secrets.HOSTINGER_HOST }}
@@ -78,26 +79,33 @@ jobs:
           ssh-add - <<< "${SSH_PRIVATE_KEY}"
           PHP_BIN="${PHP_CLI:-php}"
 
-          ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
+          ssh -p "${PORT}" "${USER}@${HOST}" <<'EOF'
           set -e
           cd "${TARGET}"
 
-          # ensure dirs
-          mkdir -p storage/framework/{cache,sessions,views} bootstrap/cache
+          # Ensure required dirs/files exist
+          mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache || true
+          [ -f storage/logs/laravel.log ] || touch storage/logs/laravel.log || true
 
-          # first time only (safe to rerun)
-          if [ ! -L public/storage ]; then
-            ${PHP_BIN} artisan storage:link || true
-          fi
+          # Permissions: dirs 775, files 664 (shared hosting friendly)
+          chmod 775 bootstrap || true
+          chmod 775 bootstrap/cache || true
+          find bootstrap/cache -type d -exec chmod 775 {} \; || true
+          find bootstrap/cache -type f -exec chmod 664 {} \; || true
 
-          # caches & migrations
+          find storage -type d -exec chmod 775 {} \; || true
+          find storage -type f -exec chmod 664 {} \; || true
+
+          # Laravel housekeeping
+          ${PHP_BIN} artisan storage:link || true
           ${PHP_BIN} artisan config:cache || true
           ${PHP_BIN} artisan route:cache || true
           ${PHP_BIN} artisan view:cache || true
           ${PHP_BIN} artisan migrate --force || true
 
-          # safe perms on shared hosting
-          find storage -type d -exec chmod 775 {} \; || true
-          find bootstrap/cache -type d -exec chmod 775 {} \; || true
-          chmod -R 664 storage/* || true
+          # Quick visibility
+          ls -ld storage bootstrap bootstrap/cache || true
           EOF
+
+
+
