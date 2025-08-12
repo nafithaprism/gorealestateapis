@@ -106,6 +106,15 @@ jobs:
           # Quick visibility
           ls -ld storage bootstrap bootstrap/cache || true
           EOF
+      - name: Health check API
+        run: |
+          echo "Checking API health..."
+          HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}\n" https://prismcloudhosting.com/GoRealEstateApis/public/api/featured-real-estate-project)
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ API health check failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ API responded with HTTP $HTTP_STATUS"
 
 
 
