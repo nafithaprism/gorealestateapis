@@ -1,0 +1,103 @@
+name: Deploy Laravel to Hostinger
+
+on:
+  push:
+    branches: [ "main" ]   # change if you deploy from another branch
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP & Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, intl, pdo_mysql, bcmath, openssl
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies (prod)
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+      # Build the release folder while excluding server-only files
+      - name: Build release folder
+        run: |
+          rsync -a --delete \
+            --exclude=".git" \
+            --exclude=".github" \
+            --exclude="node_modules" \
+            --exclude=".env" \
+            --exclude="storage/" \
+            ./ ./release/
+
+      - name: Add host key (avoid interactive prompt)
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.HOSTINGER_PORT }}" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
+
+      # Upload code to Hostinger, protecting .env and storage on the server
+      - name: Upload via rsync over SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_PORT }}
+          USER: ${{ secrets.HOSTINGER_USER }}
+          TARGET: ${{ secrets.HOSTINGER_PATH }}
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-add - <<< "${SSH_PRIVATE_KEY}"
+          rsync -az --delete \
+            --exclude=".env" \
+            --exclude="storage/" \
+            -e "ssh -p ${PORT}" \
+            release/ "${USER}@${HOST}:${TARGET}/"
+
+      # Run artisan commands on the server (uses your existing .env)
+      - name: Post-deploy artisan
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_PORT }}
+          USER: ${{ secrets.HOSTINGER_USER }}
+          TARGET: ${{ secrets.HOSTINGER_PATH }}
+          PHP_CLI: ${{ secrets.PHP_CLI }}
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-add - <<< "${SSH_PRIVATE_KEY}"
+          PHP_BIN="${PHP_CLI:-php}"
+
+          ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
+          set -e
+          cd "${TARGET}"
+
+          # ensure dirs
+          mkdir -p storage/framework/{cache,sessions,views} bootstrap/cache
+
+          # first time only (safe to rerun)
+          if [ ! -L public/storage ]; then
+            ${PHP_BIN} artisan storage:link || true
+          fi
+
+          # caches & migrations
+          ${PHP_BIN} artisan config:cache || true
+          ${PHP_BIN} artisan route:cache || true
+          ${PHP_BIN} artisan view:cache || true
+          ${PHP_BIN} artisan migrate --force || true
+
+          # safe perms on shared hosting
+          find storage -type d -exec chmod 775 {} \; || true
+          find bootstrap/cache -type d -exec chmod 775 {} \; || true
+          chmod -R 664 storage/* || true
+          EOF
