@@ -25,6 +25,7 @@ class InvestmentProjectsController extends Controller
             'inner_page_content' => 'nullable|string',
             'banner_image' => 'nullable|string',
             'content' => 'nullable|string',
+            'opportunity_type' => 'nullable|string',
         ]);
 
         $project = InvestmentProject::create($validated);
@@ -62,6 +63,7 @@ class InvestmentProjectsController extends Controller
             'inner_page_content' => 'nullable|string',
             'banner_image' => 'nullable|string',
             'content' => 'nullable|string',
+            'opportunity_type' => 'nullable|string',
         ]);
 
         $project->update($validated);

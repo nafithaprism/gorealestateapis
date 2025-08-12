@@ -22,5 +22,6 @@ class InvestmentProject extends Model
         'route',
         // 'project_plan',
         'content',
+        'opportunity_type'//added new field now
     ];
 }
