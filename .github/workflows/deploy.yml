@@ -1,30 +1,14 @@
-name: Deploy Laravel (Hostinger)
+name: Deploy Laravel to Hostinger
 
 on:
   push:
-    branches: ["main"]         # auto-deploy to ROOT by default (see job.if)
+    branches: [ "main" ]   # change if you deploy from another branch
   workflow_dispatch:
-    inputs:
-      target:
-        description: "Where to deploy?"
-        type: choice
-        options:
-          - ROOT
-          - PRISM
-        required: true
-        default: ROOT
-
-env:
-  HOST: ${{ secrets.HOSTINGER_HOST }}
-  PORT: ${{ secrets.HOSTINGER_PORT }}
-  USER: ${{ secrets.HOSTINGER_USER }}
-  PHP_BIN: ${{ secrets.PHP_CLI }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Auto-deploy on push only to ROOT. Manual runs can choose either.
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,9 +28,11 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install dependencies (prod)
-        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 
-      - name: Build release folder (keep server .env & storage)
+      # Build the release folder while excluding server-only files
+      - name: Build release folder
         run: |
           rsync -a --delete \
             --exclude=".git" \
@@ -56,59 +42,62 @@ jobs:
             --exclude="storage/" \
             ./ ./release/
 
-      - name: Resolve TARGET path from input
-        id: resolve
-        run: |
-          # default when push -> ROOT; when manual, use input
-          TARGET="${{ secrets.HOSTINGER_PATH_ROOT }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.target }}" = "PRISM" ]; then
-            TARGET="${{ secrets.HOSTINGER_PATH_PRISM }}"
-          fi
-          echo "TARGET=$TARGET" >> "$GITHUB_OUTPUT"
-
-      - name: Add host key
+      - name: Add host key (avoid interactive prompt)
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.HOSTINGER_PORT }}" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Upload via rsync
+      # Upload code to Hostinger, protecting .env and storage on the server
+      - name: Upload via rsync over SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_PORT }}
+          USER: ${{ secrets.HOSTINGER_USER }}
+          TARGET: ${{ secrets.HOSTINGER_PATH }}
         run: |
           eval "$(ssh-agent -s)"
-          ssh-add - <<< "$SSH_PRIVATE_KEY"
+          ssh-add - <<< "${SSH_PRIVATE_KEY}"
           rsync -az --delete \
             --exclude=".env" \
             --exclude="storage/" \
-            -e "ssh -p $PORT" \
-            release/ "$USER@$HOST:${{ steps.resolve.outputs.TARGET }}/"
+            -e "ssh -p ${PORT}" \
+            release/ "${USER}@${HOST}:${TARGET}/"
 
-      - name: Post-deploy artisan & permissions
+      # Run artisan commands on the server (uses your existing .env)
+      - name: Post-deploy artisan
         env:
           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          HOST: ${{ secrets.HOSTINGER_HOST }}
+          PORT: ${{ secrets.HOSTINGER_PORT }}
+          USER: ${{ secrets.HOSTINGER_USER }}
+          TARGET: ${{ secrets.HOSTINGER_PATH }}
+          PHP_CLI: ${{ secrets.PHP_CLI }}
         run: |
           eval "$(ssh-agent -s)"
-          ssh-add - <<< "$SSH_PRIVATE_KEY"
-          PHP="${PHP_BIN:-php}"
-          ssh -p "$PORT" "$USER@$HOST" <<EOF
+          ssh-add - <<< "${SSH_PRIVATE_KEY}"
+          PHP_BIN="${PHP_CLI:-php}"
+
+          ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
           set -e
-          cd "${{ steps.resolve.outputs.TARGET }}"
+          cd "${TARGET}"
 
-          mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache
-          [ -f storage/logs/laravel.log ] || touch storage/logs/laravel.log
+          # ensure dirs
+          mkdir -p storage/framework/{cache,sessions,views} bootstrap/cache
 
-          # idempotent storage symlink
-          if [ ! -L public/storage ]; then $PHP artisan storage:link || true; fi
+          # first time only (safe to rerun)
+          if [ ! -L public/storage ]; then
+            ${PHP_BIN} artisan storage:link || true
+          fi
 
           # caches & migrations
-          $PHP artisan config:cache || true
-          $PHP artisan route:cache || true
-          $PHP artisan view:cache || true
-          $PHP artisan migrate --force || true
+          ${PHP_BIN} artisan config:cache || true
+          ${PHP_BIN} artisan route:cache || true
+          ${PHP_BIN} artisan view:cache || true
+          ${PHP_BIN} artisan migrate --force || true
 
-          # shared hosting-safe perms
+          # safe perms on shared hosting
           find storage -type d -exec chmod 775 {} \; || true
           find bootstrap/cache -type d -exec chmod 775 {} \; || true
-          find storage -type f -exec chmod 664 {} \; || true
-          find bootstrap/cache -type f -exec chmod 664 {} \; || true
+          chmod -R 664 storage/* || true
           EOF
