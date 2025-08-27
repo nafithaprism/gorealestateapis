@@ -58,7 +58,7 @@ class InvestmentProjectsController extends Controller
             'feature_image' => 'nullable|string',
             'location' => 'nullable|string',
             'location_map' => 'nullable|string',
-            'project_plan1' => 'nullable|string',
+            'project_plan' => 'nullable|string',
             'price' => 'nullable|numeric',
             'inner_page_content' => 'nullable|string',
             'banner_image' => 'nullable|string',
