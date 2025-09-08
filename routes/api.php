@@ -30,6 +30,7 @@ use App\Http\Controllers\FeaturedRealEstateProjectsController;
 use App\Http\Controllers\InvestmentProjectsController;
 use App\Http\Controllers\ResidentialProjectsController;
 use App\Http\Controllers\PartnershipRegistrationController;
+use App\Http\Controllers\ContactController;
 use Illuminate\Support\Facades\Artisan;
 
 /*
@@ -54,6 +55,27 @@ Route::prefix('v1')->group(function () {
         [PartnershipRegistrationController::class, 'store']
     )->middleware('throttle:20,1')->name('partnership.registrations.store');
 });
+
+
+Route::prefix('v1')->group(function () {
+    // Create a contact
+    Route::post('/contacts', [ContactController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('contacts.store');
+});
+
+
+Route::prefix('v1')->group(function () {
+    Route::post('/contacts', [ContactController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('contacts.store');
+
+    // Get all contacts (with filters & pagination)
+    Route::get('/contacts', [ContactController::class, 'index'])
+        ->middleware('throttle:60,1')
+        ->name('contacts.index');
+});
+
 
 Route::post('/login', action: [AuthController::class, 'login']);
 Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
