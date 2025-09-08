@@ -13,25 +13,25 @@ use App\Http\Controllers\API\LocationController;
 use App\Http\Controllers\API\PageController;
 use App\Http\Controllers\API\PartnerController;
 use App\Http\Controllers\API\ProjectController;
-use App\Http\Controllers\GoPartnersLoginController;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\API\PropertyTypeController;
 use App\Http\Controllers\API\TestimonialController;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CommercialProjectsController;
+use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpressYourIntrestController;
+use App\Http\Controllers\FeaturedRealEstateProjectsController;
+use App\Http\Controllers\GoPartnersLoginController;
+use App\Http\Controllers\InvestmentProjectsController;
+use App\Http\Controllers\PartnershipRegistrationController;
+use App\Http\Controllers\ProjectContactFormController;
+use App\Http\Controllers\ResidentialProjectsController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\WebinarController;
-use App\Http\Controllers\ProjectContactFormController;
-use App\Http\Controllers\ExpressYourIntrestController;
-use App\Http\Controllers\FeaturedRealEstateProjectsController;
-use App\Http\Controllers\InvestmentProjectsController;
-use App\Http\Controllers\ResidentialProjectsController;
-use App\Http\Controllers\PartnershipRegistrationController;
-use App\Http\Controllers\ContactController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -48,35 +48,6 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-
-Route::prefix('v1')->group(function () {
-    Route::post(
-        '/partnership/registrations',
-        [PartnershipRegistrationController::class, 'store']
-    )->middleware('throttle:20,1')->name('partnership.registrations.store');
-});
-
-
-Route::prefix('v1')->group(function () {
-    // Create a contact
-    Route::post('/contacts', [ContactController::class, 'store'])
-        ->middleware('throttle:30,1')
-        ->name('contacts.store');
-});
-
-
-Route::prefix('v1')->group(function () {
-    Route::post('/contacts', [ContactController::class, 'store'])
-        ->middleware('throttle:30,1')
-        ->name('contacts.store');
-
-    // Get all contacts (with filters & pagination)
-    Route::get('/contacts', [ContactController::class, 'index'])
-        ->middleware('throttle:60,1')
-        ->name('contacts.index');
-});
-
-
 Route::post('/login', action: [AuthController::class, 'login']);
 Route::post(uri: '/register', action: [AuthController::class, 'registerUser']);
 
@@ -86,9 +57,7 @@ Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', action: [AuthController::class, 'resetPassword']);
 Route::patch('/users/{id}', action: [AuthController::class, 'updateProfile']);
 
-
 Route::apiResource(name: 'property-types', controller: PropertyTypeController::class);
-
 
 Route::apiResource('locations', controller: LocationController::class);
 
@@ -97,7 +66,6 @@ Route::apiResource('projects', controller: ProjectController::class);
 Route::apiResource(name: 'blog-categories', controller: BlogCategoryController::class);
 
 Route::apiResource(name: 'blogs', controller: BlogController::class);
-
 
 Route::apiResource('testimonials', controller: TestimonialController::class);
 
@@ -113,7 +81,6 @@ Route::apiResource('Contact-form', controller: ContactFormController::class);
 // Page routes
 Route::apiResource('pages', controller: PageController::class);
 
-
 // Gallery routes
 Route::apiResource(name: 'gallery', controller: GalleryController::class);
 
@@ -126,19 +93,17 @@ Route::apiResource(name: 'partner', controller: PartnerController::class);
 Route::apiResource(name: 'industry_reports', controller: IndustryReportController::class);
 Route::apiResource('case-study', controller: CaseStudyController::class);
 
-
 Route::apiResource('webinars', WebinarController::class);
 
 // CRUD Routes
-Route::post('subscribe', action: [SubscriptionController::class, 'subscribe']);        // Create
-Route::get('subscriptions', action: [SubscriptionController::class, 'index']);         // Read all
-Route::get('subscriptions/{id}', action: [SubscriptionController::class, 'show']);     // Read single
-Route::put('subscriptions/{id}', action: [SubscriptionController::class, 'update']);   // Update
-Route::delete('subscriptions/{id}', action: [SubscriptionController::class, 'destroy']);// Delete
+Route::post('subscribe', action: [SubscriptionController::class, 'subscribe']);          // Create
+Route::get('subscriptions', action: [SubscriptionController::class, 'index']);           // Read all
+Route::get('subscriptions/{id}', action: [SubscriptionController::class, 'show']);       // Read single
+Route::put('subscriptions/{id}', action: [SubscriptionController::class, 'update']);     // Update
+Route::delete('subscriptions/{id}', action: [SubscriptionController::class, 'destroy']); // Delete
 
 // Additional Route
-Route::get(uri: 'subscribe', action: [SubscriptionController::class, 'checkSubscription']);  // Check subscription status
-
+Route::get(uri: 'subscribe', action: [SubscriptionController::class, 'checkSubscription']); // Check subscription status
 
 Route::post('go-partners-register', [GoPartnersLoginController::class, 'register']);
 Route::post('go-partners-verify-email', [GoPartnersLoginController::class, 'verifyEmail']);
@@ -149,14 +114,12 @@ Route::post('go-partners-forgot-password', [GoPartnersLoginController::class, 'f
 Route::post('go-partners-reset-password', [GoPartnersLoginController::class, 'resetPassword']);
 Route::patch('/partner/update-profile/{id}', [GoPartnersLoginController::class, 'updateProfile']);
 
-
 Route::get('partners', [GoPartnersLoginController::class, 'getAll']);
 Route::delete('partners/{id}', [GoPartnersLoginController::class, 'delete']);
 
 Route::apiResource('Videos_url', controller: VideoController::class);
 
 Route::get('dashboard', [DashboardController::class, 'index']);
-
 
 Route::apiResource('project-contact-form', ProjectContactFormController::class);
 
@@ -228,3 +191,23 @@ Route::get('/clear-cache', function () {
     Artisan::call('view:clear');
     return 'Cache cleared';
 });
+
+Route::prefix('v1')->group(function () {
+    Route::post(
+        '/partnership/registrations',
+        [PartnershipRegistrationController::class, 'store']
+    )->middleware('throttle:20,1')->name('partnership.registrations.store');
+});
+
+Route::post('/contacts', [ContactController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('contacts.store');
+
+Route::post('/contacts', [ContactController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('contacts.store');
+
+// Get all contacts (with filters & pagination)
+Route::get('/contacts', [ContactController::class, 'index'])
+    ->middleware('throttle:60,1')
+    ->name('contacts.index');
