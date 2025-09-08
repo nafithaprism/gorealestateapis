@@ -192,12 +192,10 @@ Route::get('/clear-cache', function () {
     return 'Cache cleared';
 });
 
-Route::prefix('v1')->group(function () {
-    Route::post(
-        '/partnership/registrations',
-        [PartnershipRegistrationController::class, 'store']
-    )->middleware('throttle:20,1')->name('partnership.registrations.store');
-});
+Route::post(
+    '/partnership/registrations',
+    [PartnershipRegistrationController::class, 'store']
+)->middleware('throttle:20,1')->name('partnership.registrations.store');
 
 Route::post('/contacts', [ContactController::class, 'store'])
     ->middleware('throttle:30,1')
