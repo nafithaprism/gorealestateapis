@@ -29,6 +29,7 @@ use App\Http\Controllers\ExpressYourIntrestController;
 use App\Http\Controllers\FeaturedRealEstateProjectsController;
 use App\Http\Controllers\InvestmentProjectsController;
 use App\Http\Controllers\ResidentialProjectsController;
+use App\Http\Controllers\PartnershipRegistrationController;
 use Illuminate\Support\Facades\Artisan;
 
 /*
@@ -44,6 +45,14 @@ use Illuminate\Support\Facades\Artisan;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
+});
+
+
+Route::prefix('v1')->group(function () {
+    Route::post(
+        '/partnership/registrations',
+        [PartnershipRegistrationController::class, 'store']
+    )->middleware('throttle:20,1')->name('partnership.registrations.store');
 });
 
 Route::post('/login', action: [AuthController::class, 'login']);
