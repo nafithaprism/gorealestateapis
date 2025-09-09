@@ -11,23 +11,22 @@ class CareerController extends Controller
     // POST - Store a new career form submission
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'full_name' => 'required|string|max:255',
             'phone' => 'required|string|max:20',
             'email' => 'required|email|max:255',
-            'message' => 'required|string'
+            'message' => 'nullable|string',
+            'country_of_residence' => 'nullable|string|max:255',
+            'nationality' => 'nullable|string|max:255',
+            'referel_source' => 'nullable|string|max:255',
+            'linkedin_account' => 'nullable|string|max:255',
+            'instagram_account' => 'nullable|string|max:255',
         ]);
 
-        $career = Career::create([
-            'full_name' => $request->full_name,
-            'phone' => $request->phone,
-            'email' => $request->email,
-            'message' => $request->message
-        ]);
+        Career::create($validated);
 
         return response()->json([
-            'message' => 'Career form submitted successfully',
-            'data' => $career
+            'message' => 'Career application submitted successfully.',
         ], 201);
     }
 
