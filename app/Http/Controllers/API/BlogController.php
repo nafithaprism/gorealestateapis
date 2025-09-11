@@ -11,8 +11,10 @@ class BlogController extends Controller
     // Get all blogs
     public function index()
     {
-        $blogs = Blog::with('category')->get();
-        return response()->json($blogs, 200);
+       $blogs = Blog::with('category')->oldest('date')->get();
+
+    return response()->json($blogs, 200);
+
     }
 
     // Get a single blog
