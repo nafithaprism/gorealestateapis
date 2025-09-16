@@ -2,7 +2,7 @@ name: Deploy to AWS ECR (Laravel → Lambda)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_ACCOUNT_ID: "148761674610"
-      AWS_REGION: "us-east-1"              # keep consistent everywhere
-      ECR_REPOSITORY: "gorealestateapis"   # your repo name (not URI)
+      AWS_REGION: "us-east-1" # keep consistent everywhere
+      ECR_REPOSITORY: "gorealestateapis" # your ECR repo name (not URI)
 
     steps:
       - name: Checkout code
@@ -20,7 +20,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
@@ -40,27 +40,38 @@ jobs:
 
       - name: Log in to Amazon ECR
         run: |
-          aws ecr get-login-password --region "$AWS_REGION" |
+          aws ecr get-login-password --region "$AWS_REGION" | \
           docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+      # Buildx enables multi-arch builds if needed
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build and tag Docker image
         run: |
-          IMAGE_TAG="${ECR_REPOSITORY_URI}:${{ github.sha }}"
-          docker build -t laravel-app .
-          docker tag laravel-app:latest "$IMAGE_TAG"
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          IMAGE_TAG_SHA="${ECR_REPOSITORY_URI}:${{ github.sha }}"
+          IMAGE_TAG_LATEST="${ECR_REPOSITORY_URI}:latest"
+          # Build for the Lambda architecture
+          docker buildx build \
+            --platform "${LAMBDA_PLATFORM}" \
+            -t "$IMAGE_TAG_SHA" \
+            -t "$IMAGE_TAG_LATEST" \
+            . \
+            --load
+          echo "IMAGE_TAG_SHA=$IMAGE_TAG_SHA" >> $GITHUB_ENV
+          echo "IMAGE_TAG_LATEST=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
 
       - name: Push Docker image to ECR
-        run: docker push "$IMAGE_TAG"
-           # (Optional) Update Lambda environment variables in case you changed any
-      # UNCOMMENT and edit if you want CI to own env config:
+        run: |
+          docker push "$IMAGE_TAG_SHA"
+          docker push "$IMAGE_TAG_LATEST"
 
-      # (Optional) Update Lambda environment variables in case you changed any
-      # UNCOMMENT and edit if you want CI to own env config:
+      # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
       - name: Update Lambda environment (optional)
+        if: ${{ env.UPDATE_ENV_VARS == 'true' }}
         run: |
           aws lambda update-function-configuration \
-            --function-name ${{ secrets.LAMBDA_NAME }} \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
             --environment "Variables={
               APP_ENV=production,
               APP_DEBUG=false,
@@ -80,16 +91,30 @@ jobs:
             }" >/dev/null
           echo "Lambda environment updated."
 
+      - name: Update Lambda to new container image
+        run: |
+          aws lambda update-function-code \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --image-uri "$IMAGE_TAG_SHA" >/dev/null
+          aws lambda wait function-updated \
+            --function-name "${{ secrets.LAMBDA_NAME }}"
+          echo "Lambda now points to image:"
+          aws lambda get-function \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --query 'Code.ImageUri' --output text
 
-
-      - name: Notify deployment success
-        run: echo "✅ Deployment to ECR successful!"
-
-
-
-
-
-         # keep consistent everywhere
-
-
-           # keep consistent everywhere
+      - name: Publish version & move alias
+        run: |
+          VERSION=$(aws lambda publish-version \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --query 'Version' --output text)
+          echo "Published version: $VERSION"
+          aws lambda update-alias \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --name "prod" \
+            --function-version "$VERSION" \
+          || aws lambda create-alias \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --name "prod" \
+            --function-version "$VERSION"
+          echo "Alias 'prod' -> version $VERSION"
