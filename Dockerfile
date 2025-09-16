@@ -41,7 +41,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN if [ -f package.json ]; then npm ci; fi
 COPY resources resources
-COPY vite.config.* . 2>/dev/null || true
 RUN if [ -f package.json ]; then npm run build; fi
 
 
