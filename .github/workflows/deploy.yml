@@ -1,120 +1,258 @@
-name: Deploy Laravel to Hostinger
+name: Deploy to AWS ECR (Laravel → Lambda)
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Run php artisan migrate --force via Artisan Lambda"
+        type: boolean
+        default: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup PHP & Composer
-        uses: shivammathur/setup-php@v2
+      # (Optional) If you build assets with Node (Vite/Mix), keep these three steps.
+      # Otherwise, remove them.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          php-version: "8.2"
-          extensions: mbstring, intl, pdo_mysql, bcmath, openssl
-          tools: composer:v2
+          node-version: 18
 
-      - name: Cache Composer
+      - name: Cache Node.js dependencies
         uses: actions/cache@v4
         with:
-          path: vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-          restore-keys: ${{ runner.os }}-composer-
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-      - name: Install dependencies (prod)
+      - name: Install frontend dependencies (optional)
         run: |
-          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
-
-      # Build the release folder while excluding server-only files
-      - name: Build release folder
-        run: |
-          rsync -a --delete \
-            --exclude=".git" \
-            --exclude=".github" \
-            --exclude="node_modules" \
-            --exclude=".env" \
-            --exclude="storage/" \
-            ./ ./release/
-
-      - name: Add host key (avoid interactive prompt)
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.HOSTINGER_PORT }}" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
-
-      # Upload code to Hostinger, protecting .env and storage on the server
-      - name: Upload via rsync over SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
-          HOST: ${{ secrets.HOSTINGER_HOST }}
-          PORT: ${{ secrets.HOSTINGER_PORT }}
-          USER: ${{ secrets.HOSTINGER_USER }}
-          TARGET: ${{ secrets.HOSTINGER_PATH }}
-        run: |
-          eval "$(ssh-agent -s)"
-          ssh-add - <<< "${SSH_PRIVATE_KEY}"
-          rsync -az --delete \
-            --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
-            --exclude=".env" \
-            --exclude="storage/" \
-            -e "ssh -p ${PORT}" \
-            release/ "${USER}@${HOST}:${TARGET}/"
-
-      - name: Post-deploy artisan & permissions
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
-          HOST: ${{ secrets.HOSTINGER_HOST }}
-          PORT: ${{ secrets.HOSTINGER_PORT }}
-          USER: ${{ secrets.HOSTINGER_USER }}
-          TARGET: ${{ secrets.HOSTINGER_PATH }}
-          PHP_CLI: ${{ secrets.PHP_CLI }}
-        run: |
-          eval "$(ssh-agent -s)"
-          ssh-add - <<< "${SSH_PRIVATE_KEY}"
-          PHP_BIN="${PHP_CLI:-php}"
-
-          # NOTE: unquoted EOF so ${TARGET} and ${PHP_BIN} expand locally
-          ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
-          set -e
-          cd "${TARGET}"
-
-          # ensure dirs/files
-          mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache || true
-          [ -f storage/logs/laravel.log ] || touch storage/logs/laravel.log || true
-
-          # perms: dirs 775, files 664
-          chmod 775 bootstrap || true
-          chmod 775 bootstrap/cache || true
-          find bootstrap/cache -type d -exec chmod 775 {} \; || true
-          find bootstrap/cache -type f -exec chmod 664 {} \; || true
-          find storage -type d -exec chmod 775 {} \; || true
-          find storage -type f -exec chmod 664 {} \; || true
-
-          # Laravel housekeeping
-          ${PHP_BIN} artisan storage:link || true
-          ${PHP_BIN} artisan config:clear || true
-          ${PHP_BIN} artisan config:cache || true
-          ${PHP_BIN} artisan route:cache || true
-          ${PHP_BIN} artisan view:cache || true
-          ${PHP_BIN} artisan migrate --force || true
-
-          # Quick visibility
-          ls -ld storage bootstrap bootstrap/cache || true
-          EOF
-
-      - name: Health check API
-        run: |
-          echo "Checking API health..."
-          URL="https://prismcloudhosting.com/GoRealEstateApis/public/api/featured-real-estate-projects"
-          HTTP_STATUS=$(curl -s -o /tmp/hc_body -w "%{http_code}" "$URL")
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "❌ Health check failed ($HTTP_STATUS). Response body:"
-            head -c 400 /tmp/hc_body || true
-            exit 1
+          if [ -f package.json ]; then
+            npm ci
+            # npm run build   # uncomment if you compile assets into /public
           fi
-          echo "✅ API responded with HTTP $HTTP_STATUS"
+
+      # AWS creds (using long-lived keys like your example).
+      # If you can, prefer OIDC in the future.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} |
+          docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
+
+      # Build & tag image (Dockerfile should use Bref php-81-fpm like we discussed)
+      - name: Build and tag Docker image
+        run: |
+          IMAGE_TAG=${{ secrets.ECR_REPOSITORY_URI }}:${{ github.sha }}
+          docker build -t laravel-app .
+          docker tag laravel-app:latest $IMAGE_TAG
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      # (Optional) Peek inside the built image to sanity-check paths
+      - name: List files in container image
+        run: |
+          docker run --rm --entrypoint "" ${{ env.IMAGE_TAG }} ls -al /var/task
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ env.IMAGE_TAG }}
+
+    #   Update the Lambda function to this new image
+      # - name: Update Lambda with new image
+      #   run: |
+      #     aws lambda update-function-code \
+      #       --function-name ${{ secrets.LAMBDA_NAME }} \
+      #       --image-uri       ${{ env.IMAGE_TAG }} \
+      #       --region          ${{ secrets.AWS_REGION }} >/dev/null
+      #     echo "Lambda updated."
+      #     aws lambda wait function-updated --function-name ${{ secrets.LAMBDA_NAME }}
+
+      # (Optional) Update Lambda environment variables in case you changed any
+      # UNCOMMENT and edit if you want CI to own env config:
+    #   - name: Update Lambda environment (optional)
+    #     run: |
+    #       aws lambda update-function-configuration \
+    #         --function-name ${{ secrets.LAMBDA_NAME }} \
+    #         --environment "Variables={
+    #           APP_ENV=production,
+    #           APP_DEBUG=false,
+    #           APP_URL=${{ secrets.APP_URL }},
+    #           APP_KEY=${{ secrets.APP_KEY }},
+    #           LOG_CHANNEL=stderr,
+    #           LOG_LEVEL=error,
+    #           APP_STORAGE=/tmp,
+    #           CACHE_STORE=file,
+    #           SESSION_DRIVER=cookie,
+    #           QUEUE_CONNECTION=sync,
+    #           FILESYSTEM_DISK=s3,
+    #           AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }},
+    #           DB_CONNECTION=mysql,
+    #           DB_HOST=${{ secrets.DB_HOST }},
+    #           DB_PORT=3306,
+    #           DB_DATABASE=${{ secrets.DB_DATABASE }},
+    #           DB_USERNAME=${{ secrets.DB_USERNAME }},
+    #           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+    #         }" >/dev/null
+    #       echo "Lambda environment updated."
+
+      # (Optional) Run migrations by invoking a **separate** Artisan Lambda
+      # This requires you to have an additional Lambda function that runs Bref console with CMD ["artisan"].
+    #   - name: Run migrations (optional)
+    #     if: ${{ inputs.run_migrations == true }}
+    #     run: |
+    #       PAYLOAD='{"command":"migrate","args":["--force"]}'
+    #       aws lambda invoke \
+    #         --function-name  ${{ secrets.ARTISAN_LAMBDA_NAME }} \
+    #         --payload        "$PAYLOAD" \
+    #         /tmp/migrate.json >/dev/null
+    #       cat /tmp/migrate.json
+
+      # (Optional) Invalidate CloudFront cache
+    #   - name: Invalidate CloudFront Cache (optional)
+    #     if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+    #     run: |
+    #       aws cloudfront create-invalidation \
+    #         --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+    #         --paths "/*" \
+    #         --region ${{ secrets.AWS_REGION }}
+
+      - name: Notify deployment success
+        run: echo "✅ Deployment to ECR successful!"
+
+
+
+
+# name: Deploy Laravel to Hostinger
+
+# on:
+#   push:
+#     branches: ["main"]
+#   workflow_dispatch:
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+
+#       - name: Setup PHP & Composer
+#         uses: shivammathur/setup-php@v2
+#         with:
+#           php-version: "8.2"
+#           extensions: mbstring, intl, pdo_mysql, bcmath, openssl
+#           tools: composer:v2
+
+#       - name: Cache Composer
+#         uses: actions/cache@v4
+#         with:
+#           path: vendor
+#           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+#           restore-keys: ${{ runner.os }}-composer-
+
+#       - name: Install dependencies (prod)
+#         run: |
+#           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+#       # Build the release folder while excluding server-only files
+#       - name: Build release folder
+#         run: |
+#           rsync -a --delete \
+#             --exclude=".git" \
+#             --exclude=".github" \
+#             --exclude="node_modules" \
+#             --exclude=".env" \
+#             --exclude="storage/" \
+#             ./ ./release/
+
+#       - name: Add host key (avoid interactive prompt)
+#         run: |
+#           mkdir -p ~/.ssh
+#           ssh-keyscan -p "${{ secrets.HOSTINGER_PORT }}" "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
+
+#       # Upload code to Hostinger, protecting .env and storage on the server
+#       - name: Upload via rsync over SSH
+#         env:
+#           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+#           HOST: ${{ secrets.HOSTINGER_HOST }}
+#           PORT: ${{ secrets.HOSTINGER_PORT }}
+#           USER: ${{ secrets.HOSTINGER_USER }}
+#           TARGET: ${{ secrets.HOSTINGER_PATH }}
+#         run: |
+#           eval "$(ssh-agent -s)"
+#           ssh-add - <<< "${SSH_PRIVATE_KEY}"
+#           rsync -az --delete \
+#             --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
+#             --exclude=".env" \
+#             --exclude="storage/" \
+#             -e "ssh -p ${PORT}" \
+#             release/ "${USER}@${HOST}:${TARGET}/"
+
+#       - name: Post-deploy artisan & permissions
+#         env:
+#           SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+#           HOST: ${{ secrets.HOSTINGER_HOST }}
+#           PORT: ${{ secrets.HOSTINGER_PORT }}
+#           USER: ${{ secrets.HOSTINGER_USER }}
+#           TARGET: ${{ secrets.HOSTINGER_PATH }}
+#           PHP_CLI: ${{ secrets.PHP_CLI }}
+#         run: |
+#           eval "$(ssh-agent -s)"
+#           ssh-add - <<< "${SSH_PRIVATE_KEY}"
+#           PHP_BIN="${PHP_CLI:-php}"
+
+#           # NOTE: unquoted EOF so ${TARGET} and ${PHP_BIN} expand locally
+#           ssh -p "${PORT}" "${USER}@${HOST}" <<EOF
+#           set -e
+#           cd "${TARGET}"
+
+#           # ensure dirs/files
+#           mkdir -p storage/logs storage/framework/{cache,sessions,views} bootstrap/cache || true
+#           [ -f storage/logs/laravel.log ] || touch storage/logs/laravel.log || true
+
+#           # perms: dirs 775, files 664
+#           chmod 775 bootstrap || true
+#           chmod 775 bootstrap/cache || true
+#           find bootstrap/cache -type d -exec chmod 775 {} \; || true
+#           find bootstrap/cache -type f -exec chmod 664 {} \; || true
+#           find storage -type d -exec chmod 775 {} \; || true
+#           find storage -type f -exec chmod 664 {} \; || true
+
+#           # Laravel housekeeping
+#           ${PHP_BIN} artisan storage:link || true
+#           ${PHP_BIN} artisan config:clear || true
+#           ${PHP_BIN} artisan config:cache || true
+#           ${PHP_BIN} artisan route:cache || true
+#           ${PHP_BIN} artisan view:cache || true
+#           ${PHP_BIN} artisan migrate --force || true
+
+#           # Quick visibility
+#           ls -ld storage bootstrap bootstrap/cache || true
+#           EOF
+
+#       - name: Health check API
+#         run: |
+#           echo "Checking API health..."
+#           URL="https://prismcloudhosting.com/GoRealEstateApis/public/api/featured-real-estate-projects"
+#           HTTP_STATUS=$(curl -s -o /tmp/hc_body -w "%{http_code}" "$URL")
+#           if [ "$HTTP_STATUS" -ne 200 ]; then
+#             echo "❌ Health check failed ($HTTP_STATUS). Response body:"
+#             head -c 400 /tmp/hc_body || true
+#             exit 1
+#           fi
+#           echo "✅ API responded with HTTP $HTTP_STATUS"
