@@ -71,9 +71,6 @@ RUN php artisan package:discover --ansi || true
 # RUN php artisan route:cache  || true
 # RUN php artisan view:cache   || true
 
-# Bring in built assets if present
-COPY --from=assets /app/public/build /var/task/public/build 2>/dev/null || true
-
 
 # ===============================================
 # Stage 4: Runtime for AWS Lambda (Bref PHP 8.2)
