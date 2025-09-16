@@ -52,6 +52,8 @@ jobs:
 
       - name: Push Docker image to ECR
         run: docker push "$IMAGE_TAG"
+           # (Optional) Update Lambda environment variables in case you changed any
+      # UNCOMMENT and edit if you want CI to own env config:
 
       # (Optional) Update Lambda environment variables in case you changed any
       # UNCOMMENT and edit if you want CI to own env config:
