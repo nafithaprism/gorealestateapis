@@ -29,6 +29,8 @@ RUN composer install \
         --no-scripts \
         --no-ansi --ignore-platform-reqs -vvv)
 
+RUN php -r "require 'vendor/autoload.php'; exit(class_exists('Bref\\FpmRuntime\\Main')?0:1);"
+
 # Copy the rest of the app now
 COPY . .
 
