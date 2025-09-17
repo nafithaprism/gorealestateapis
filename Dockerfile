@@ -1,60 +1,118 @@
-# =================================
-# 1) Build vendor with PHP 8.2
-# =================================
+# =========================
+# 1) Build vendors on PHP 8.2
+# =========================
 FROM php:8.2-cli AS vendor
 WORKDIR /app
 
-# Tools + PHP extensions commonly needed by Laravel
+# Tools + common Laravel extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git unzip zlib1g-dev libzip-dev \
   && docker-php-ext-install -j"$(nproc)" zip pdo_mysql bcmath pcntl \
   && rm -rf /var/lib/apt/lists/*
 
-# Composer (runs under PHP 8.2 so your lock constraints pass)
+# Composer (runs under PHP 8.2 so lock constraints pass)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 ENV COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_MEMORY_LIMIT=-1
 
-# Install prod deps per your composer.json/lock
+# Install prod deps only
 COPY composer.json composer.lock* ./
 RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --no-scripts
 
-# Add the rest of the app and optimize autoload
+# Bring in the app and optimize autoloaders
 COPY . .
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
-# Ensure bootstrap/cache files exist in the image
-RUN mkdir -p bootstrap/cache \
- && php -r 'is_file("bootstrap/cache/packages.php")||file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
- && php -r 'is_file("bootstrap/cache/services.php")||file_put_contents("bootstrap/cache/services.php","<?php return [];");'
+# DO NOT run artisan here (keeps build env-agnostic)
 
-# Pre-discover packages so Laravel won’t try to write them later
-RUN php artisan package:discover --ansi
-
-# (Optional) Prebuild caches into /var/task/bootstrap/cache (read-only at runtime)
-RUN php artisan config:cache || true \
- && php artisan route:cache  || true \
- && php artisan view:cache   || true
-
-
-# =================================
-# 2) Final Lambda runtime (Bref PHP 8.2 FPM)
-# =================================
+# =========================
+# 2) Runtime: Bref PHP 8.2 FPM
+# =========================
 FROM bref/php-82-fpm:2 AS production
 WORKDIR /var/task
 
 # Copy built app
 COPY --from=vendor /app /var/task
 
-# Minimal runtime env. DO NOT override cache paths to /tmp here.
+# Tell Laravel to use /tmp/storage/... (writable on Lambda)
+# These paths match the directories the Laravel Bridge creates at cold start.
 ENV BREF_HANDLER=public/index.php \
     APP_ENV=production \
     APP_DEBUG=false \
-    LOG_CHANNEL=stderr
+    LOG_CHANNEL=stderr \
+    APP_STORAGE=/tmp/storage \
+    VIEW_COMPILED_PATH=/tmp/storage/framework/views \
+    APP_CONFIG_CACHE=/tmp/storage/bootstrap/cache/config.php \
+    APP_EVENTS_CACHE=/tmp/storage/bootstrap/cache/events.php \
+    APP_PACKAGES_CACHE=/tmp/storage/bootstrap/cache/packages.php \
+    APP_SERVICES_CACHE=/tmp/storage/bootstrap/cache/services.php \
+    APP_ROUTES_CACHE=/tmp/storage/bootstrap/cache/routes.php \
+    CACHE_DRIVER=array \
+    SESSION_DRIVER=array \
+    QUEUE_CONNECTION=sync
 
-
-# Keep Bref's ENTRYPOINT; just provide the handler as CMD
+# Keep Bref’s entrypoint; just pass the handler
 CMD ["public/index.php"]
+
+
+
+# # =================================
+# # 1) Build vendor with PHP 8.2
+# # =================================
+# FROM php:8.2-cli AS vendor
+# WORKDIR /app
+
+# # Tools + PHP extensions commonly needed by Laravel
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#       git unzip zlib1g-dev libzip-dev \
+#   && docker-php-ext-install -j"$(nproc)" zip pdo_mysql bcmath pcntl \
+#   && rm -rf /var/lib/apt/lists/*
+
+# # Composer (runs under PHP 8.2 so your lock constraints pass)
+# COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+# ENV COMPOSER_ALLOW_SUPERUSER=1 \
+#     COMPOSER_MEMORY_LIMIT=-1
+
+# # Install prod deps per your composer.json/lock
+# COPY composer.json composer.lock* ./
+# RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --no-scripts
+
+# # Add the rest of the app and optimize autoload
+# COPY . .
+# RUN composer dump-autoload -o --classmap-authoritative --no-scripts
+
+# # Ensure bootstrap/cache files exist in the image
+# RUN mkdir -p bootstrap/cache \
+#  && php -r 'is_file("bootstrap/cache/packages.php")||file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
+#  && php -r 'is_file("bootstrap/cache/services.php")||file_put_contents("bootstrap/cache/services.php","<?php return [];");'
+
+# # Pre-discover packages so Laravel won’t try to write them later
+# RUN php artisan package:discover --ansi
+
+# # (Optional) Prebuild caches into /var/task/bootstrap/cache (read-only at runtime)
+# RUN php artisan config:cache || true \
+#  && php artisan route:cache  || true \
+#  && php artisan view:cache   || true
+
+
+# # =================================
+# # 2) Final Lambda runtime (Bref PHP 8.2 FPM)
+# # =================================
+# FROM bref/php-82-fpm:2 AS production
+# WORKDIR /var/task
+
+# # Copy built app
+# COPY --from=vendor /app /var/task
+
+# # Minimal runtime env. DO NOT override cache paths to /tmp here.
+# ENV BREF_HANDLER=public/index.php \
+#     APP_ENV=production \
+#     APP_DEBUG=false \
+#     LOG_CHANNEL=stderr
+
+
+# # Keep Bref's ENTRYPOINT; just provide the handler as CMD
+# CMD ["public/index.php"]
 
 
 
