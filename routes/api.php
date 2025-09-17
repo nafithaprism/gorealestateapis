@@ -1,8 +1,6 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
+
 
 
 use App\Http\Controllers\API\BannerFormController;
@@ -50,39 +48,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 
-Route::get('/health', function () {
-    try {
-        DB::connection()->getPdo();
-        $db = DB::select('select 1 as ok')[0]->ok ?? 0;
-    } catch (\Throwable $e) {
-        return response()->json(['ok' => false, 'error' => 'DB: '.$e->getMessage()], 500);
-    }
 
-    try {
-        Cache::put('health_check', 'ok', 5);
-        $cache = Cache::get('health_check') === 'ok';
-    } catch (\Throwable $e) {
-        return response()->json(['ok' => false, 'error' => 'Cache: '.$e->getMessage()], 500);
-    }
-
-
-    //hello
-
-    try {
-        Storage::disk(config('filesystems.default', 'local'))->put('health.txt', 'ok');
-        $fs = Storage::exists('health.txt');
-    } catch (\Throwable $e) {
-        return response()->json(['ok' => false, 'error' => 'FS: '.$e->getMessage()], 500);
-    }
-
-    return response()->json([
-        'ok'    => true,
-        'db'    => (bool) $db,
-        'cache' => $cache,
-        'fs'    => $fs,
-        'time'  => now()->toIso8601String(),
-    ]);
-});
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
