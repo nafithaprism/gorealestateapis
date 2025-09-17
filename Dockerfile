@@ -1,57 +1,66 @@
 # ================================
-# Stage 1: Composer (build vendor)
+# Stage 1: Build vendor on PHP 8.2
 # ================================
-FROM composer:2 AS vendor
+FROM php:8.2-cli-alpine AS vendor
 WORKDIR /app
 
-# Make composer behave like PHP 8.2 to match the Lambda runtime
-ENV COMPOSER_ALLOW_SUPERUSER=1 \
-    COMPOSER_MEMORY_LIMIT=-1 \
-    COMPOSER_PLATFORM_PHP=8.2.0
+# Use the Composer binary from the official image
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Install PHP deps first (cache-friendly)
+ENV COMPOSER_ALLOW_SUPERUSER=1 \
+    COMPOSER_MEMORY_LIMIT=-1
+
+# Cache-friendly: copy only composer files first
 COPY composer.json composer.lock* ./
 
-# Install prod deps only (bridge must be in "require", not require-dev)
-RUN composer install \
+# First try a strict install; if platform/ext checks bite, retry ignoring them
+RUN set -eux; \
+    composer install \
       --no-dev \
       --prefer-dist \
       --no-interaction \
       --no-progress \
-      --no-scripts
+      --no-scripts -vvv \
+  || (echo "Composer strict install failed, retrying with --ignore-platform-reqs" && \
+      composer install \
+        --no-dev \
+        --prefer-dist \
+        --no-interaction \
+        --no-progress \
+        --no-scripts \
+        --ignore-platform-reqs -vvv)
 
-# Copy the rest of the app
+# Copy the full app and optimize autoload
 COPY . .
-
-# Optimize autoload
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
 # ================================================
-# Stage 2: Prepare Laravel app (optional caching)
+# Stage 2: (optional) warm up package discovery
 # ================================================
 FROM bref/php-82-fpm:2 AS build
 WORKDIR /var/task
 
-# Bring in app (including vendor/)
+# Bring in the app (including /vendor from previous stage)
 COPY --from=vendor /app /var/task
 
-# Best effort: discover packages at build time (doesn't write to /var/task on runtime)
+# Ensure the cache dir exists (runtime will write to /tmp, but presence helps)
+RUN mkdir -p bootstrap/cache
+
+# Best effort: discover packages; don't fail image if something needs env/db
 RUN php artisan package:discover --ansi || true
-# You can cache config/routes if safe for your app:
+# Optionally:
 # RUN php artisan config:cache  || true
 # RUN php artisan route:cache   || true
-# Do NOT pre-create bootstrap/cache/*.php in /var/task (read-only at runtime)
 
 # ===============================================
-# Stage 3: Runtime (AWS Lambda – Bref FPM)
+# Stage 3: Runtime for AWS Lambda (Bref PHP 8.2)
 # ===============================================
 FROM bref/php-82-fpm:2 AS production
 WORKDIR /var/task
 
-# Copy app
 COPY --from=build /var/task /var/task
 
-# Runtime env defaults (you can also set these in Lambda console)
+# Runtime defaults for serverless (you can also set these in Lambda console)
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
@@ -60,18 +69,17 @@ ENV APP_ENV=production \
     APP_CONFIG_CACHE=/tmp/bootstrap/cache/config.php \
     APP_EVENTS_CACHE=/tmp/bootstrap/cache/events.php \
     APP_PACKAGES_CACHE=/tmp/bootstrap/cache/packages.php \
-    APP_SERVICES_CACHE=/tmp/bootstrap/cache/services.php
+    APP_SERVICES_CACHE=/tmp/bootstrap/cache/services.php \
+    SESSION_DRIVER=array \
+    CACHE_DRIVER=array \
+    QUEUE_CONNECTION=sync
 
-# Ensure directories exist (creation is harmless if they already do)
+# Ensure writable dirs exist at cold start
 RUN mkdir -p /tmp/bootstrap/cache /tmp/storage/framework/views
 
-# Explicit handler (Bref FPM points to Laravel front controller)
+# Bref FPM handler points to Laravel's front controller
 ENV BREF_HANDLER=public/index.php
-
-# Lambda starts the Bref runtime; this tells it which front controller to serve
 CMD ["public/index.php"]
-
-
 
 
 
