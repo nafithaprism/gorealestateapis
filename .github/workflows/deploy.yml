@@ -11,10 +11,11 @@ jobs:
     env:
       AWS_ACCOUNT_ID: "148761674610"
       AWS_REGION: "us-east-1" # keep consistent everywhere
-      ECR_REPOSITORY: "gorealestateapis" # your ECR repo name (not URI)
-      LAMBDA_PLATFORM: "linux/amd64" # set to linux/arm64 if your Lambda is ARM64
-      UPDATE_ENV_VARS: "false" # set to "true" if you want CI to own env vars
-    # set to "true" if you want CI to own env vars
+      ECR_REPOSITORY: "gorealestateapis" # ECR repo name (not URI)
+      LAMBDA_PLATFORM: "linux/amd64" # set linux/arm64 if your Lambda is ARM64
+      UPDATE_ENV_VARS: "true" # set "true" if you want CI to own env vars
+      API_URL: "https://tzhc1nmz86.execute-api.us-east-1.amazonaws.com/production/api/blogs"
+      # LAMBDA name is read from secrets.LAMBDA_NAME
 
     steps:
       - name: Checkout code
@@ -46,7 +47,6 @@ jobs:
           aws ecr get-login-password --region "$AWS_REGION" | \
           docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-      # Buildx enables multi-arch builds if needed
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -54,7 +54,6 @@ jobs:
         run: |
           IMAGE_TAG_SHA="${ECR_REPOSITORY_URI}:${{ github.sha }}"
           IMAGE_TAG_LATEST="${ECR_REPOSITORY_URI}:latest"
-          # Build for the Lambda architecture
           docker buildx build \
             --platform "${LAMBDA_PLATFORM}" \
             -t "$IMAGE_TAG_SHA" \
@@ -69,8 +68,7 @@ jobs:
           docker push "$IMAGE_TAG_SHA"
           docker push "$IMAGE_TAG_LATEST"
 
-      # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
-      # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
+      # Optional: keep Lambda env vars in sync (flip UPDATE_ENV_VARS to "true" to enable)
       - name: Update Lambda environment (optional)
         if: ${{ env.UPDATE_ENV_VARS == 'true' }}
         run: |
@@ -91,7 +89,8 @@ jobs:
               DB_PORT=3306,
               DB_DATABASE=${{ secrets.DB_DATABASE }},
               DB_USERNAME=${{ secrets.DB_USERNAME }},
-              DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              APP_KEY=base64:QZNUjQCEjc7Tbc3qqp48NRNBD+JHpCmBbtoUYDcIMUY=
             }" >/dev/null
           echo "Lambda environment updated."
 
@@ -122,3 +121,188 @@ jobs:
             --name "prod" \
             --function-version "$VERSION"
           echo "Alias 'prod' -> version $VERSION"
+
+      # ---------- Post-deploy checks ----------
+      - name: Install jq (for JSON assertions)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Warm up Lambda (optional)
+        run: |
+          echo "Warming up via API Gateway..."
+          curl -s -o /dev/null -m 10 "$API_URL" || true
+
+      - name: Smoke test /production/api/blogs
+        run: |
+          echo "Checking $API_URL"
+          ATTEMPTS=20
+          SLEEP=5
+          for i in $(seq 1 $ATTEMPTS); do
+            HTTP_CODE=$(curl -sS -m 20 -o /tmp/resp.json -w "%{http_code}" "$API_URL" || echo "000")
+            echo "Attempt $i/$ATTEMPTS -> HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              if jq -e . >/dev/null 2>&1 < /tmp/resp.json; then
+                # Accept if body is an array or has a 'data' field (adjust as needed)
+                if jq -e 'type=="array" or has("data")' /tmp/resp.json >/dev/null; then
+                  echo "API looks healthy ✅"
+                  exit 0
+                fi
+              fi
+            fi
+            sleep $SLEEP
+          done
+          echo "API did not become healthy in time. Last response:"
+          cat /tmp/resp.json || true
+          exit 1
+
+      - name: Tail Lambda logs for 2 minutes (post-deploy)
+        if: always() # still run even if previous step failed, helpful for debugging
+        run: |
+          timeout 120 aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --since 10m \
+            --follow \
+            --format short
+
+      # ---------- Extra diagnostics on failure ----------
+      - name: Show recent Lambda logs on failure (detailed)
+        if: failure()
+        run: |
+          aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --since 30m \
+            --format detailed
+
+          echo "Last invocation's tail logs via Lambda API:"
+          aws lambda invoke \
+            --region "${{ env.AWS_REGION }}" \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --log-type Tail \
+            /tmp/out.json --query 'LogResult' --output text | base64 --decode || true
+          echo
+          echo "Payload from last invoke:"
+          cat /tmp/out.json || true
+
+# name: Deploy to AWS ECR (Laravel → Lambda)
+
+# on:
+#   push:
+#     branches: ["main"]
+#   workflow_dispatch:
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     env:
+#       AWS_ACCOUNT_ID: "148761674610"
+#       AWS_REGION: "us-east-1" # keep consistent everywhere
+#       ECR_REPOSITORY: "gorealestateapis" # your ECR repo name (not URI)
+#       LAMBDA_PLATFORM: "linux/amd64" # set to linux/arm64 if your Lambda is ARM64
+#       UPDATE_ENV_VARS: "false" # set to "true" if you want CI to own env vars
+#     # set to "true" if you want CI to own env vars
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       - name: Who am I?
+#         run: |
+#           aws sts get-caller-identity
+#           echo "Region: $AWS_REGION"
+
+#       - name: Ensure ECR repository
+#         run: |
+#           aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
+#           aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+#           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+#           ECR_REPOSITORY_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+#           echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+#           echo "ECR_REPOSITORY_URI=$ECR_REPOSITORY_URI" >> $GITHUB_ENV
+
+#       - name: Log in to Amazon ECR
+#         run: |
+#           aws ecr get-login-password --region "$AWS_REGION" | \
+#           docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+#       # Buildx enables multi-arch builds if needed
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       - name: Build and tag Docker image
+#         run: |
+#           IMAGE_TAG_SHA="${ECR_REPOSITORY_URI}:${{ github.sha }}"
+#           IMAGE_TAG_LATEST="${ECR_REPOSITORY_URI}:latest"
+#           # Build for the Lambda architecture
+#           docker buildx build \
+#             --platform "${LAMBDA_PLATFORM}" \
+#             -t "$IMAGE_TAG_SHA" \
+#             -t "$IMAGE_TAG_LATEST" \
+#             . \
+#             --load
+#           echo "IMAGE_TAG_SHA=$IMAGE_TAG_SHA" >> $GITHUB_ENV
+#           echo "IMAGE_TAG_LATEST=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
+
+#       - name: Push Docker image to ECR
+#         run: |
+#           docker push "$IMAGE_TAG_SHA"
+#           docker push "$IMAGE_TAG_LATEST"
+
+#       # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
+#       # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
+#       - name: Update Lambda environment (optional)
+#         if: ${{ env.UPDATE_ENV_VARS == 'true' }}
+#         run: |
+#           aws lambda update-function-configuration \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --environment "Variables={
+#               APP_ENV=production,
+#               APP_DEBUG=false,
+#               LOG_CHANNEL=stderr,
+#               LOG_LEVEL=error,
+#               APP_STORAGE=/tmp,
+#               CACHE_STORE=file,
+#               SESSION_DRIVER=cookie,
+#               QUEUE_CONNECTION=sync,
+#               FILESYSTEM_DISK=s3,
+#               DB_CONNECTION=mysql,
+#               DB_HOST=${{ secrets.DB_HOST }},
+#               DB_PORT=3306,
+#               DB_DATABASE=${{ secrets.DB_DATABASE }},
+#               DB_USERNAME=${{ secrets.DB_USERNAME }},
+#               DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+#             }" >/dev/null
+#           echo "Lambda environment updated."
+
+#       - name: Update Lambda to new container image
+#         run: |
+#           aws lambda update-function-code \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --image-uri "$IMAGE_TAG_SHA" >/dev/null
+#           aws lambda wait function-updated \
+#             --function-name "${{ secrets.LAMBDA_NAME }}"
+#           echo "Lambda now points to image:"
+#           aws lambda get-function \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --query 'Code.ImageUri' --output text
+
+#       - name: Publish version & move alias
+#         run: |
+#           VERSION=$(aws lambda publish-version \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --query 'Version' --output text)
+#           echo "Published version: $VERSION"
+#           aws lambda update-alias \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --name "prod" \
+#             --function-version "$VERSION" \
+#           || aws lambda create-alias \
+#             --function-name "${{ secrets.LAMBDA_NAME }}" \
+#             --name "prod" \
+#             --function-version "$VERSION"
+#           echo "Alias 'prod' -> version $VERSION"
