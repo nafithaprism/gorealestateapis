@@ -4,12 +4,12 @@
 FROM composer:2 AS vendor
 WORKDIR /app
 
-# Composer hygiene + match Lambda PHP
+# Match Lambda PHP, speed + stability
 ENV COMPOSER_ALLOW_SUPERUSER=1 \
     COMPOSER_MEMORY_LIMIT=-1 \
     COMPOSER_PLATFORM_PHP=8.2.0
 
-# Install deps with good layer cache
+# Install deps with good layer caching
 COPY composer.json composer.lock* ./
 RUN composer install \
       --no-dev \
@@ -27,13 +27,13 @@ RUN composer install \
         --no-scripts \
         --no-ansi --ignore-platform-reqs -vvv)
 
-# Fail early if bref/bref is not present
+# Fail early if bref/bref is missing
 RUN php -r "require 'vendor/autoload.php'; if (!class_exists('Bref\\FpmRuntime\\Main')) {fwrite(STDERR, \"ERROR: bref/bref not installed. Run 'composer require bref/bref:^2'.\\n\"); exit(1);} echo \"Bref found.\\n\";"
 
-# Bring in the app
+# Bring in the rest of the app
 COPY . .
 
-# Ensure autoloads are optimized (no-op if lock unchanged)
+# Re-run install in case composer.json/lock changed in the full copy
 RUN composer install \
       --no-dev \
       --prefer-dist \
@@ -41,60 +41,60 @@ RUN composer install \
       --no-progress \
       --no-scripts \
       --no-ansi -vvv || true
+
+# Optimize autoload
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
 
-
-
 # ================================================
-# Stage 3: Prepare Laravel app (cache / bootstrap)
+# Stage 2: Prepare Laravel app (cache/bootstrap)
 # ================================================
 FROM bref/php-82-fpm:2 AS build
 WORKDIR /var/task
 
-# App + vendor from composer stage
+# Copy app (incl. vendor/)
 COPY --from=vendor /app /var/task
 
-# Bring in built assets (public/build, etc.)
-COPY --from=assets /app/public /var/task/public
-
-# Production-ish env for build-time artisan
+# Minimal prod env for build-time artisan
 ENV APP_ENV=production \
     APP_DEBUG=false
 
-# Ensure cache dir/files exist to prevent runtime writes under /var/task
+# Make sure bootstrap/cache exists + stub manifests to avoid writes
 RUN mkdir -p bootstrap/cache \
  && php -r 'file_exists("bootstrap/cache/packages.php") || file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
  && php -r 'file_exists("bootstrap/cache/services.php") || file_put_contents("bootstrap/cache/services.php","<?php return [];");'
 
-# Discover providers (best effort)
+# Discover providers (best effort; ignore DB-dependant stuff)
 RUN php artisan package:discover --ansi || true
-# If safe for your app, uncomment for faster cold starts:
+# (Optional, only if safe)
 # RUN php artisan config:cache  || true
 # RUN php artisan route:cache   || true
-# (Avoid view:cache here; we compile views to /tmp at runtime)
+# (Avoid view:cache in build; we write views to /tmp at runtime)
 
 
 # ===============================================
-# Stage 4: Final runtime for AWS Lambda (Bref FPM)
+# Stage 3: Final runtime for AWS Lambda (Bref FPM)
 # ===============================================
 FROM bref/php-82-fpm:2 AS production
 WORKDIR /var/task
 
-# Copy fully prepared app
+# Copy prepared app
 COPY --from=build /var/task /var/task
 
-# Redirect writable paths to /tmp (Lambda's writable filesystem)
-RUN mkdir -p /tmp/bootstrap/cache /tmp/views \
- && rm -rf bootstrap/cache \
- && ln -s /tmp/bootstrap/cache bootstrap/cache
-
-# Laravel runtime settings for Lambda
-ENV VIEW_COMPILED_PATH=/tmp/views \
+# Laravel runtime: send all writable caches to /tmp (Lambda-writable)
+ENV APP_SERVICES_CACHE=/tmp/services.php \
+    APP_PACKAGES_CACHE=/tmp/packages.php \
+    APP_CONFIG_CACHE=/tmp/config.php \
+    APP_EVENTS_CACHE=/tmp/events.php \
+    APP_ROUTES_CACHE=/tmp/routes.php \
+    VIEW_COMPILED_PATH=/tmp/views \
     LOG_CHANNEL=stderr \
     SESSION_DRIVER=cookie \
     CACHE_STORE=array \
     BREF_HANDLER=public/index.php
 
-# Start Bref FPM runtime → serves Laravel via API Gateway/ALB event
+# Ensure dirs will exist at cold start (no-op if already)
+RUN mkdir -p /tmp /var/task/bootstrap/cache
+
+# Bref starts FPM and serves Laravel via API Gateway/ALB
 CMD ["public/index.php"]
