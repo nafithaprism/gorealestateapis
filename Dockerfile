@@ -1,81 +1,75 @@
-# ================================
-# Stage 1: install dependencies on PHP 8.2
-# ================================
-FROM php:8.2-cli-alpine AS vendor
+# ======================
+# 1) Build vendor (PHP 8.2)
+# ======================
+FROM composer:2 AS vendor
 WORKDIR /app
 
-# tools for composer/zip
-RUN apk add --no-cache git unzip libzip-dev && docker-php-ext-install zip
+# Make Composer behave like PHP 8.2 to satisfy your lockfile
+ENV COMPOSER_ALLOW_SUPERUSER=1 \
+    COMPOSER_MEMORY_LIMIT=-1 \
+    COMPOSER_PLATFORM_PHP=8.2.29
 
-# composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-ENV COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_MEMORY_LIMIT=-1
-
-# install prod deps (matches your composer.json)
+# Install prod deps only (matches your composer.json)
 COPY composer.json composer.lock* ./
-RUN set -eux; \
-    composer install --no-dev --prefer-dist --no-interaction --no-progress --no-scripts -vvv \
-  || (echo "Retry with --ignore-platform-reqs" && \
-      composer install --no-dev --prefer-dist --no-interaction --no-progress --no-scripts --ignore-platform-reqs -vvv)
+RUN composer install \
+      --no-dev --prefer-dist --no-interaction --no-progress --no-scripts
 
-# bring in the app code now
+# Bring in the rest of the app and optimize autoload
 COPY . .
-
-# optimize autoload
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
-# ================================
-# Stage 2: prebuild Laravel caches on Bref runtime
-# ================================
+# Ensure Laravel won't try to write package/service manifests at runtime
+RUN mkdir -p bootstrap/cache \
+ && php -r 'is_file("bootstrap/cache/packages.php")||file_put_contents("bootstrap/cache/packages.php","<?php return [];");' \
+ && php -r 'is_file("bootstrap/cache/services.php")||file_put_contents("bootstrap/cache/services.php","<?php return [];");'
+
+# =========================================
+# 2) (Optional) Build caches inside bref PHP
+# =========================================
 FROM bref/php-82-fpm:2 AS build
 WORKDIR /var/task
-
-# copy app (includes vendor/)
 COPY --from=vendor /app /var/task
 
-# ensure cache dirs exist
-RUN mkdir -p bootstrap/cache storage/framework/views
-
-# IMPORTANT: remove any bad stubs that return empty arrays
-RUN rm -f bootstrap/cache/services.php bootstrap/cache/packages.php
-
-# Pre-discover packages/providers so Laravel won't try to write in /var/task
-# Provide safe inline env so no DB/filesystem writes are required
-RUN APP_ENV=production \
+# Minimal env so artisan can run during build
+ENV APP_ENV=production \
     APP_DEBUG=false \
     APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-    LOG_CHANNEL=stderr \
-    CACHE_DRIVER=array \
-    SESSION_DRIVER=array \
-    php artisan package:discover --ansi
+    VIEW_COMPILED_PATH=/tmp/views \
+    APP_STORAGE=/tmp
 
-# (Optionally) you can also warm up these if your app supports it without DB:
-# RUN APP_ENV=production php artisan config:cache  || true
-# RUN APP_ENV=production php artisan route:cache   || true
+RUN mkdir -p bootstrap/cache /tmp/views
+# Best-effort: if any of these fail, we still proceed
+RUN php artisan package:discover --ansi || true \
+ && php artisan config:cache       || true \
+ && php artisan route:cache        || true \
+ && php artisan view:cache         || true
 
-# ================================
-# Stage 3: runtime image for Lambda
-# ================================
+# =========================================
+# 3) Final Lambda runtime (Bref PHP 8.2 FPM)
+# =========================================
 FROM bref/php-82-fpm:2 AS production
 WORKDIR /var/task
 
 COPY --from=build /var/task /var/task
 
-# runtime env (tune as needed)
-ENV APP_ENV=production \
-    APP_DEBUG=false \
-    LOG_CHANNEL=stderr \
+# Writable dirs for Lambda
+RUN mkdir -p /tmp/views \
+             /tmp/storage/framework/{cache,sessions,views} \
+             /tmp/storage/logs
+
+# Use baked caches under /var/task; write views to /tmp
+ENV BREF_HANDLER=public/index.php \
+    VIEW_COMPILED_PATH=/tmp/views \
     APP_STORAGE=/tmp \
+    LOG_CHANNEL=stderr \
+    CACHE_DRIVER=array \
     SESSION_DRIVER=array \
-    CACHE_DRIVER=array
+    APP_CONFIG_CACHE=/var/task/bootstrap/cache/config.php \
+    APP_PACKAGES_CACHE=/var/task/bootstrap/cache/packages.php \
+    APP_SERVICES_CACHE=/var/task/bootstrap/cache/services.php \
+    APP_EVENTS_CACHE=/var/task/bootstrap/cache/events.php
 
-# writable paths for runtime
-RUN mkdir -p /tmp/bootstrap/cache /tmp/storage/framework/views
-
-# Let Bref FPM boot Laravel's front controller
-ENV BREF_HANDLER=public/index.php
 CMD ["public/index.php"]
-
 
 
 
