@@ -13,7 +13,7 @@ jobs:
       AWS_REGION: "us-east-1" # keep consistent everywhere
       ECR_REPOSITORY: "gorealestateapis" # ECR repo name (not URI)
       LAMBDA_PLATFORM: "linux/amd64" # set linux/arm64 if your Lambda is ARM64
-      UPDATE_ENV_VARS: "true" # set "true" if you want CI to own env vars
+      UPDATE_ENV_VARS: "false" # set "true" if you want CI to own env vars
       API_URL: "https://tzhc1nmz86.execute-api.us-east-1.amazonaws.com/production/api/blogs"
       # LAMBDA name is read from secrets.LAMBDA_NAME
 
