@@ -65,6 +65,9 @@ Route::get('/health', function () {
         return response()->json(['ok' => false, 'error' => 'Cache: '.$e->getMessage()], 500);
     }
 
+
+    //hello
+
     try {
         Storage::disk(config('filesystems.default', 'local'))->put('health.txt', 'ok');
         $fs = Storage::exists('health.txt');
