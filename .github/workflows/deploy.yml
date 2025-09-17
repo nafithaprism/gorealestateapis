@@ -105,3 +105,34 @@ jobs:
           aws lambda get-function \
             --function-name "${{ secrets.LAMBDA_NAME }}" \
             --query 'Code.ImageUri' --output text
+
+      - name: Install jq (for JSON assertions)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Tail Lambda logs for 2 minutes (post-deploy)
+        if: always() # still run even if previous step failed, helpful for debugging
+        run: |
+          timeout 120 aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --since 10m \
+            --follow \
+            --format short
+
+      # ---------- Extra diagnostics on failure ----------
+      - name: Show recent Lambda logs on failure (detailed)
+        if: failure()
+        run: |
+          aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --since 30m \
+            --format detailed
+
+          echo "Last invocation's tail logs via Lambda API:"
+          aws lambda invoke \
+            --region "${{ env.AWS_REGION }}" \
+            --function-name "${{ secrets.LAMBDA_NAME }}" \
+            --log-type Tail \
+            /tmp/out.json --query 'LogResult' --output text | base64 --decode || true
+          echo
+          echo "Payload from last invoke:"
+          cat /tmp/out.json || true
