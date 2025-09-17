@@ -14,6 +14,7 @@ jobs:
       ECR_REPOSITORY: "gorealestateapis" # your ECR repo name (not URI)
       LAMBDA_PLATFORM: "linux/amd64" # set to linux/arm64 if your Lambda is ARM64
       UPDATE_ENV_VARS: "false" # set to "true" if you want CI to own env vars
+    # set to "true" if you want CI to own env vars
 
     steps:
       - name: Checkout code
