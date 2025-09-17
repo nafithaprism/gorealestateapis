@@ -52,8 +52,9 @@ ENV BREF_HANDLER=public/index.php \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr
 
-# Let Laravel Bridge create /tmp/storage/... at cold start.
-# No CMD override needed: Bref will run PHP-FPM for public/index.php
+
+# Keep Bref's ENTRYPOINT; just provide the handler as CMD
+CMD ["public/index.php"]
 
 
 
