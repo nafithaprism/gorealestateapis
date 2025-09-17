@@ -55,9 +55,6 @@ WORKDIR /var/task
 # Bring in app (including vendor/)
 COPY --from=vendor /app /var/task
 
-# Bring in built assets if present
-# (Vite typically outputs to public/build)
-COPY --from=assets /app/public /var/task/public
 
 ENV APP_ENV=production \
     APP_DEBUG=false \
