@@ -46,19 +46,6 @@ RUN composer install \
 RUN composer dump-autoload -o --classmap-authoritative --no-scripts
 
 
-# ==================================================
-# Stage 2: Build frontend assets with Vite (optional)
-# ==================================================
-FROM node:20-alpine AS assets
-WORKDIR /app
-COPY package*.json ./
-RUN if [ -f package.json ]; then npm ci; fi
-COPY resources resources
-# If you use a .env for Vite, copy it (optional)
-# COPY .env .env
-RUN if [ -f package.json ]; then npm run build; fi
-
-
 # ================================================
 # Stage 3: Prepare Laravel app (cache / bootstrap)
 # ================================================
