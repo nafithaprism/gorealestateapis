@@ -70,6 +70,7 @@ jobs:
           docker push "$IMAGE_TAG_LATEST"
 
       # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
+      # Optional: update Lambda env vars BEFORE publishing a version so they get snapshotted
       - name: Update Lambda environment (optional)
         if: ${{ env.UPDATE_ENV_VARS == 'true' }}
         run: |
