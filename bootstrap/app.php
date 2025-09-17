@@ -4,6 +4,11 @@
 |--------------------------------------------------------------------------
 | Create The Application
 |--------------------------------------------------------------------------
+|
+| The first thing we will do is create a new Laravel application instance
+| which serves as the "glue" for all the components of Laravel, and is
+| the IoC container for the system binding all of the various parts.
+|
 */
 
 $app = new Illuminate\Foundation\Application(
@@ -12,27 +17,13 @@ $app = new Illuminate\Foundation\Application(
 
 /*
 |--------------------------------------------------------------------------
-| Use /tmp on AWS Lambda (writable filesystem)
-|--------------------------------------------------------------------------
-| APP_STORAGE=/tmp is already in your Lambda env. We also point the
-| bootstrap path to /tmp/bootstrap and ensure /tmp/bootstrap/cache exists.
-*/
-$app->useStoragePath(env('APP_STORAGE', $app->basePath('storage')));
-
-$bootstrapPath = env('APP_BOOTSTRAP_PATH', $app->basePath('bootstrap'));
-$app->useBootstrapPath($bootstrapPath);
-
-// Ensure /tmp/bootstrap/cache exists so PackageManifest & caches can write
-//caches can write
-$cacheDir = rtrim($bootstrapPath, '/').'/cache';
-if (! is_dir($cacheDir)) {
-    @mkdir($cacheDir, 0755, true);
-}
-
-/*
-|--------------------------------------------------------------------------
 | Bind Important Interfaces
 |--------------------------------------------------------------------------
+|
+| Next, we need to bind some important interfaces into the container so
+| we will be able to resolve them when needed. The kernels serve the
+| incoming requests to this application from both the web and CLI.
+|
 */
 
 $app->singleton(
@@ -54,6 +45,11 @@ $app->singleton(
 |--------------------------------------------------------------------------
 | Return The Application
 |--------------------------------------------------------------------------
+|
+| This script returns the application instance. The instance is given to
+| the calling script so we can separate the building of the instances
+| from the actual running of the application and sending responses.
+|
 */
 
 return $app;
