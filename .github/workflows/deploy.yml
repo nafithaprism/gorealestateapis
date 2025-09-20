@@ -61,15 +61,14 @@ jobs:
       - name: Push Docker image
         run: docker push "$IMAGE_TAG"
 
-      - name: Update Lambda to new image
-        run: |
-          aws lambda update-function-code \
-            --function-name "${{ secrets.LAMBDA_NAME }}" \
-            --image-uri "$IMAGE_TAG" \
-            --region "$AWS_REGION" >/dev/null
-          aws lambda wait function-updated --function-name "${{ secrets.LAMBDA_NAME }}"
-          echo "Lambda updated to $IMAGE_TAG"
-
+      # - name: Update Lambda to new image
+      #   run: |
+      #     aws lambda update-function-code \
+      #       --function-name "${{ secrets.LAMBDA_NAME }}" \
+      #       --image-uri "$IMAGE_TAG" \
+      #       --region "$AWS_REGION" >/dev/null
+      #     aws lambda wait function-updated --function-name "${{ secrets.LAMBDA_NAME }}"
+      #     echo "Lambda updated to $IMAGE_TAG"
 # name: Deploy to AWS ECR (Laravel → Lambda)
 
 # on:
