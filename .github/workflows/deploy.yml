@@ -34,43 +34,51 @@ jobs:
             sudo apt-get install -y jq
           fi
 
+      - name: Sanity checks (who am I / region / instance exists)
+        env:
+          RAW_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
+          echo "Using instance: $INSTANCE_ID"
+          echo "Caller identity:"
+          aws sts get-caller-identity
+          echo "EC2 state:"
+          aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text
+          echo "SSM managed (list first 20):"
+          aws ssm describe-instance-information --max-results 20 --query 'InstanceInformationList[].InstanceId'
+
       - name: Deploy via SSM (git pull on EC2)
         env:
           RAW_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
         run: |
-          # Trim any whitespace from the secret (common copy/paste issue)
+          set -euo pipefail
           INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
 
-          # 1) Define the remote script (single string, no quoting headaches)
+          # Build remote script
           read -r -d '' SCRIPT <<'EOS'
           set -euo pipefail
-
-          # --- settings for your server/app ---
           APP_DIR="/var/www/gorealestateapis"
           BRANCH="main"
           PHP_FPM="php8.3-fpm"
           NGINX="nginx"
-          # ------------------------------------
 
           cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
 
-          # Put app in maintenance (safe deploy)
           php artisan down || true
 
-          # Update code from Git (repo must already be cloned here)
           if [ ! -d .git ]; then
             echo "❌ Not a git repo at $APP_DIR"; exit 1
           fi
+
           git fetch --all
           git reset --hard "origin/$BRANCH"
 
-          # Install PHP deps
           if ! command -v composer >/dev/null 2>&1; then
             echo "❌ Composer not found on server"; exit 1
           fi
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 
-          # Laravel housekeeping
           chmod -R ug+rw storage bootstrap/cache || true
           php artisan migrate --force || true
           php artisan cache:clear || true
@@ -79,49 +87,54 @@ jobs:
           php artisan view:cache || true
           php artisan queue:restart || true
 
-          # Reload services (if present)
           systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
           systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
 
-          # Back online
           php artisan up || true
 
           echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           EOS
 
-          # 2) Build parameters JSON file (exact AWS CLI format)
+          # Build parameters JSON file
           jq -n --arg s "$SCRIPT" '{commands: [$s]}' > /tmp/params.json
 
-          # 3) Call SSM and capture CommandId
+          # Send command (capture errors verbosely)
+          set +e
           CMD_JSON=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy $GITHUB_SHA" \
-            --parameters file:///tmp/params.json)
+            --parameters file:///tmp/params.json 2> /tmp/ssm_error.txt)
+          RC=$?
+          set -e
+          if [ $RC -ne 0 ]; then
+            echo "❌ aws ssm send-command failed:"
+            cat /tmp/ssm_error.txt
+            exit $RC
+          fi
 
           COMMAND_ID=$(echo "$CMD_JSON" | jq -r '.Command.CommandId')
           echo "CommandId: $COMMAND_ID"
 
-          # 4) (Optional) Wait for completion and print output
-          # Poll until the invocation is done
+          # Wait for completion and print output
           for i in {1..60}; do
             STATUS=$(aws ssm list-command-invocations \
               --command-id "$COMMAND_ID" \
               --details \
               | jq -r '.CommandInvocations[0].Status // empty')
-            [[ -n "$STATUS" ]] || { sleep 2; continue; }
+            [ -n "$STATUS" ] || { sleep 2; continue; }
             echo "SSM status: $STATUS"
-            if [[ "$STATUS" == "Success" || "$STATUS" == "Cancelled" || "$STATUS" == "TimedOut" || "$STATUS" == "Failed" ]]; then
-              break
-            fi
+            case "$STATUS" in
+              Success|Cancelled|TimedOut|Failed) break ;;
+            esac
             sleep 3
           done
 
-          # Show the output (stdout/stderr) if available
+          echo "---- SSM Output ----"
           aws ssm list-command-invocations \
             --command-id "$COMMAND_ID" \
             --details \
             | jq -r '
                 .CommandInvocations[0].CommandPlugins[0] as $p
-                | "---- STDOUT ----\n" + ($p.Output // "") + "\n---- STDERR ----\n" + ($p.StandardErrorUrl // "")
+                | "STDOUT:\n" + ($p.Output // "") + "\n\nSTDERR URL:\n" + ($p.StandardErrorUrl // "")
               '
