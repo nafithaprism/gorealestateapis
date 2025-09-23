@@ -36,7 +36,7 @@ jobs:
 
       - name: Sanity checks (who am I / region / instance exists)
         env:
-          RAW_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          RAW_INSTANCE_ID: i-0ef615ac9851108fd
         run: |
           set -euo pipefail
           INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
@@ -50,7 +50,7 @@ jobs:
 
       - name: Deploy via SSM (git pull on EC2)
         env:
-          RAW_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          RAW_INSTANCE_ID: i-0ef615ac9851108fd
         run: |
           set -euo pipefail
           INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
