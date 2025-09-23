@@ -27,9 +27,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy via SSM (git pull on EC2)
+      - name: Ensure jq is installed
         run: |
-          # 1) Define the remote script
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
+      - name: Deploy via SSM (git pull on EC2)
+        env:
+          RAW_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+        run: |
+          # Trim any whitespace from the secret (common copy/paste issue)
+          INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
+
+          # 1) Define the remote script (single string, no quoting headaches)
           read -r -d '' SCRIPT <<'EOS'
           set -euo pipefail
 
@@ -77,12 +89,39 @@ jobs:
           echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           EOS
 
-          # 2) Build the --parameters payload with jq (avoids quoting issues)
-          PARAMS=$(jq -n --arg s "$SCRIPT" '{commands: [$s]}')
+          # 2) Build parameters JSON file (exact AWS CLI format)
+          jq -n --arg s "$SCRIPT" '{commands: [$s]}' > /tmp/params.json
 
-          # 3) Call SSM
-          aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+          # 3) Call SSM and capture CommandId
+          CMD_JSON=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy $GITHUB_SHA" \
-            --parameters "$PARAMS"
+            --parameters file:///tmp/params.json)
+
+          COMMAND_ID=$(echo "$CMD_JSON" | jq -r '.Command.CommandId')
+          echo "CommandId: $COMMAND_ID"
+
+          # 4) (Optional) Wait for completion and print output
+          # Poll until the invocation is done
+          for i in {1..60}; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id "$COMMAND_ID" \
+              --details \
+              | jq -r '.CommandInvocations[0].Status // empty')
+            [[ -n "$STATUS" ]] || { sleep 2; continue; }
+            echo "SSM status: $STATUS"
+            if [[ "$STATUS" == "Success" || "$STATUS" == "Cancelled" || "$STATUS" == "TimedOut" || "$STATUS" == "Failed" ]]; then
+              break
+            fi
+            sleep 3
+          done
+
+          # Show the output (stdout/stderr) if available
+          aws ssm list-command-invocations \
+            --command-id "$COMMAND_ID" \
+            --details \
+            | jq -r '
+                .CommandInvocations[0].CommandPlugins[0] as $p
+                | "---- STDOUT ----\n" + ($p.Output // "") + "\n---- STDERR ----\n" + ($p.StandardErrorUrl // "")
+              '
