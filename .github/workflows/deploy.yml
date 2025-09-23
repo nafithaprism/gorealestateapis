@@ -29,55 +29,60 @@ jobs:
 
       - name: Deploy via SSM (git pull on EC2)
         run: |
+          # 1) Define the remote script
+          read -r -d '' SCRIPT <<'EOS'
+          set -euo pipefail
+
+          # --- settings for your server/app ---
+          APP_DIR="/var/www/gorealestateapis"
+          BRANCH="main"
+          PHP_FPM="php8.3-fpm"
+          NGINX="nginx"
+          # ------------------------------------
+
+          cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
+
+          # Put app in maintenance (safe deploy)
+          php artisan down || true
+
+          # Update code from Git (repo must already be cloned here)
+          if [ ! -d .git ]; then
+            echo "❌ Not a git repo at $APP_DIR"; exit 1
+          fi
+          git fetch --all
+          git reset --hard "origin/$BRANCH"
+
+          # Install PHP deps
+          if ! command -v composer >/dev/null 2>&1; then
+            echo "❌ Composer not found on server"; exit 1
+          fi
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+          # Laravel housekeeping
+          chmod -R ug+rw storage bootstrap/cache || true
+          php artisan migrate --force || true
+          php artisan cache:clear || true
+          php artisan config:cache || true
+          php artisan route:cache || true
+          php artisan view:cache || true
+          php artisan queue:restart || true
+
+          # Reload services (if present)
+          systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
+          systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
+
+          # Back online
+          php artisan up || true
+
+          echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          EOS
+
+          # 2) Build the --parameters payload with jq (avoids quoting issues)
+          PARAMS=$(jq -n --arg s "$SCRIPT" '{commands: [$s]}')
+
+          # 3) Call SSM
           aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy $GITHUB_SHA" \
-            --parameters commands="$(
-              cat <<'EOS'
-              set -euo pipefail
-
-              # --- settings for your server/app ---
-              APP_DIR="/var/www/gorealestateapis"
-              BRANCH="main"
-              PHP_FPM="php8.3-fpm"
-              NGINX="nginx"
-              # ------------------------------------
-
-              cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
-
-              # Put app in maintenance (safe deploy)
-              php artisan down || true
-
-              # Update code from Git (repo must already be cloned here)
-              if [ ! -d .git ]; then
-                echo "❌ Not a git repo at $APP_DIR"; exit 1
-              fi
-              git fetch --all
-              git reset --hard "origin/$BRANCH"
-
-              # Install PHP deps
-              if ! command -v composer >/dev/null 2>&1; then
-                echo "❌ Composer not found on server"; exit 1
-              fi
-              composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
-
-              # Laravel housekeeping
-              chmod -R ug+rw storage bootstrap/cache || true
-              php artisan migrate --force || true
-              php artisan cache:clear || true
-              php artisan config:cache || true
-              php artisan route:cache || true
-              php artisan view:cache || true
-              php artisan queue:restart || true
-
-              # Reload services (if present)
-              systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
-              systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
-
-              # Back online
-              php artisan up || true
-
-              echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-              EOS
-            )"
+            --parameters "$PARAMS"
