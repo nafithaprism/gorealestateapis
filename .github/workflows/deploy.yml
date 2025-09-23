@@ -34,20 +34,6 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      - name: Sanity checks (who am I / region / instance exists)
-        env:
-          RAW_INSTANCE_ID: i-0ef615ac9851108fd
-        run: |
-          set -euo pipefail
-          INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
-          echo "Using instance: $INSTANCE_ID"
-          echo "Caller identity:"
-          aws sts get-caller-identity
-          echo "EC2 state:"
-          aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text
-          echo "SSM managed (list first 20):"
-          aws ssm describe-instance-information --max-results 20 --query 'InstanceInformationList[].InstanceId'
-
       - name: Deploy via SSM (git pull on EC2)
         env:
           RAW_INSTANCE_ID: i-0ef615ac9851108fd
@@ -55,8 +41,8 @@ jobs:
           set -euo pipefail
           INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
 
-          # Build remote script
-          read -r -d '' SCRIPT <<'EOS'
+          # Build remote script safely (no NUL/quoting issues)
+          SCRIPT=$(cat <<'EOS'
           set -euo pipefail
           APP_DIR="/var/www/gorealestateapis"
           BRANCH="main"
@@ -94,11 +80,12 @@ jobs:
 
           echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           EOS
+          )
 
-          # Build parameters JSON file
+          # Build parameters JSON
           jq -n --arg s "$SCRIPT" '{commands: [$s]}' > /tmp/params.json
 
-          # Send command (capture errors verbosely)
+          # Send command (capture any AWS CLI error)
           set +e
           CMD_JSON=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
