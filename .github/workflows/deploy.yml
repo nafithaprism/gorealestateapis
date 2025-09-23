@@ -1,8 +1,8 @@
-name: Deploy to AWS ECR (Laravel → Lambda)
+name: Deploy to EC2 via SSM (Laravel)
 
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   workflow_dispatch:
 
 env:
@@ -15,280 +15,69 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout (optional)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      # If you don't build frontend assets in CI, remove Node steps entirely.
-      # - name: Set up Node.js
-      #   uses: actions/setup-node@v4
-      #   with:
-      #     node-version: 18
-      # - name: Install frontend deps (optional)
-      #   run: |
-      #     if [ -f package.json ]; then npm ci; fi
-
-      - name: Configure AWS credentials (long-lived keys)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Verify identity
-        run: aws sts get-caller-identity
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Derive ECR registry and repo
+      - name: Deploy via SSM (git pull on EC2)
         run: |
-          echo "ECR_URI=${{ secrets.ECR_REPOSITORY_URI }}" >> $GITHUB_ENV
-          echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_ENV
-          echo "ECR_REPO=$(echo '${{ secrets.ECR_REPOSITORY_URI }}' | cut -d/ -f2-)" >> $GITHUB_ENV
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy $GITHUB_SHA" \
+            --parameters commands="$(
+              cat <<'EOS'
+              set -euo pipefail
 
-      - name: Ensure ECR repository exists
-        run: |
-          aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1 \
-          || aws ecr create-repository --repository-name "$ECR_REPO"
+              # --- settings for your server/app ---
+              APP_DIR="/var/www/gorealestateapis"
+              BRANCH="main"
+              PHP_FPM="php8.3-fpm"
+              NGINX="nginx"
+              # ------------------------------------
 
-      - name: Build Docker image
-        run: |
-          IMAGE_TAG="$ECR_REGISTRY/$ECR_REPO:${{ github.sha }}"
-          docker build -t "$IMAGE_TAG" .
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+              cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
 
-      - name: Push Docker image
-        run: docker push "$IMAGE_TAG"
+              # Put app in maintenance (safe deploy)
+              php artisan down || true
 
-      # - name: Update Lambda to new image
-      #   run: |
-      #     aws lambda update-function-code \
-      #       --function-name "${{ secrets.LAMBDA_NAME }}" \
-      #       --image-uri "$IMAGE_TAG" \
-      #       --region "$AWS_REGION" >/dev/null
-      #     aws lambda wait function-updated --function-name "${{ secrets.LAMBDA_NAME }}"
-      #     echo "Lambda updated to $IMAGE_TAG"
-# name: Deploy to AWS ECR (Laravel → Lambda)
+              # Update code from Git (repo must already be cloned here)
+              if [ ! -d .git ]; then
+                echo "❌ Not a git repo at $APP_DIR"; exit 1
+              fi
+              git fetch --all
+              git reset --hard "origin/$BRANCH"
 
-# on:
-#   push:
-#     branches: ["main"]
-#   workflow_dispatch:
-#     inputs:
-#       run_migrations:
-#         description: "Run php artisan migrate --force via Artisan Lambda"
-#         type: boolean
-#         default: false
+              # Install PHP deps
+              if ! command -v composer >/dev/null 2>&1; then
+                echo "❌ Composer not found on server"; exit 1
+              fi
+              composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
+              # Laravel housekeeping
+              chmod -R ug+rw storage bootstrap/cache || true
+              php artisan migrate --force || true
+              php artisan cache:clear || true
+              php artisan config:cache || true
+              php artisan route:cache || true
+              php artisan view:cache || true
+              php artisan queue:restart || true
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
+              # Reload services (if present)
+              systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
+              systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
 
-#       # (Optional) If you build assets with Node (Vite/Mix), keep these three steps.
-#       # Otherwise, remove them.
-#       - name: Set up Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: 18
+              # Back online
+              php artisan up || true
 
-#       - name: Cache Node.js dependencies
-#         uses: actions/cache@v4
-#         with:
-#           path: ~/.npm
-#           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-#           restore-keys: |
-#             ${{ runner.os }}-node-
-
-#       - name: Install frontend dependencies (optional)
-#         run: |
-#           if [ -f package.json ]; then
-#             npm ci
-#             # npm run build   # uncomment if you compile assets into /public
-#           fi
-
-#       # AWS creds (using long-lived keys like your example).
-#       # If you can, prefer OIDC in the future.
-#       - name: Configure AWS Credentials
-#         uses: aws-actions/configure-aws-credentials@v4
-#         with:
-#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#           aws-region: us-east-1
-
-#       - name: Log in to Amazon ECR
-#         run: |
-#           aws ecr get-login-password --region ${{ secrets.AWS_REGION }} |
-#           docker login --username AWS --password-stdin ${{ secrets.ECR_REPOSITORY_URI }}
-
-#       # Build & tag image (Dockerfile should use Bref php-81-fpm like we discussed)
-#       - name: Build and tag Docker image
-#         run: |
-#           IMAGE_TAG=${{ secrets.ECR_REPOSITORY_URI }}:${{ github.sha }}
-#           docker build -t laravel-app .
-#           docker tag laravel-app:latest $IMAGE_TAG
-#           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-#       # (Optional) Peek inside the built image to sanity-check paths
-#       - name: List files in container image
-#         run: |
-#           docker run --rm --entrypoint "" ${{ env.IMAGE_TAG }} ls -al /var/task
-
-#       - name: Push Docker image to ECR
-#         run: |
-#           docker push ${{ env.IMAGE_TAG }}
-
-#       #   Update the Lambda function to this new image
-#       - name: Update Lambda with new image
-#         run: |
-#           aws lambda update-function-code \
-#             --function-name ${{ secrets.LAMBDA_NAME }} \
-#             --image-uri       ${{ env.IMAGE_TAG }} \
-#             --region          ${{ secrets.AWS_REGION }} >/dev/null
-#           echo "Lambda updated."
-#           aws lambda wait function-updated --function-name ${{ secrets.LAMBDA_NAME }}
-
-#       - name: Notify deployment success
-#         run: echo "✅ Deployment to ECR successful!"
-# # name: Deploy to AWS ECR (Laravel → Lambda)
-
-# # on:
-# #   push:
-# #     branches: ["main"]
-# #   workflow_dispatch:
-
-# # jobs:
-# #   deploy:
-# #     runs-on: ubuntu-latest
-# #     env:
-# #       AWS_ACCOUNT_ID: "148761674610"
-# #       AWS_REGION: "us-east-1" # keep consistent everywhere
-# #       ECR_REPOSITORY: "gorealestateapis" # ECR repo name (not URI)
-# #       LAMBDA_PLATFORM: "linux/amd64" # set linux/arm64 if your Lambda is ARM64
-# #       UPDATE_ENV_VARS: "false" # set "true" if you want CI to own env vars
-# #       API_URL: "https://tzhc1nmz86.execute-api.us-east-1.amazonaws.com/production/api/blogs"
-# #       # LAMBDA name is read from secrets.LAMBDA_NAME
-
-# #     steps:
-# #       - name: Checkout code
-# #         uses: actions/checkout@v4
-
-# # - name: Configure AWS Credentials
-# #   uses: aws-actions/configure-aws-credentials@v4
-# #   with:
-# #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-# #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-# #     aws-region: ${{ env.AWS_REGION }}
-
-# #       - name: Who am I?
-# #         run: |
-# #           aws sts get-caller-identity
-# #           echo "Region: $AWS_REGION"
-
-# #       - name: Ensure ECR repository
-# #         run: |
-# #           aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
-# #           aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
-# #           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-# #           ECR_REPOSITORY_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
-# #           echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
-# #           echo "ECR_REPOSITORY_URI=$ECR_REPOSITORY_URI" >> $GITHUB_ENV
-
-# #       - name: Log in to Amazon ECR
-# #         run: |
-# #           aws ecr get-login-password --region "$AWS_REGION" | \
-# #           docker login --username AWS --password-stdin "$ECR_REGISTRY"
-
-# #       - name: Set up Docker Buildx
-# #         uses: docker/setup-buildx-action@v3
-
-# #       - name: Build and tag Docker image
-# #         run: |
-# #           IMAGE_TAG_SHA="${ECR_REPOSITORY_URI}:${{ github.sha }}"
-# #           IMAGE_TAG_LATEST="${ECR_REPOSITORY_URI}:latest"
-# #           docker buildx build \
-# #             --platform "${LAMBDA_PLATFORM}" \
-# #             -t "$IMAGE_TAG_SHA" \
-# #             -t "$IMAGE_TAG_LATEST" \
-# #             . \
-# #             --load
-# #           echo "IMAGE_TAG_SHA=$IMAGE_TAG_SHA" >> $GITHUB_ENV
-# #           echo "IMAGE_TAG_LATEST=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
-
-# #       - name: Push Docker image to ECR
-# #         run: |
-# #           docker push "$IMAGE_TAG_SHA"
-# #           docker push "$IMAGE_TAG_LATEST"
-
-# #       # Optional: keep Lambda env vars in sync (flip UPDATE_ENV_VARS to "true" to enable)
-# #       - name: Update Lambda environment (optional)
-# #         if: ${{ env.UPDATE_ENV_VARS == 'true' }}
-# #         run: |
-# #           aws lambda update-function-configuration \
-# #             --function-name "${{ secrets.LAMBDA_NAME }}" \
-# #             --environment "Variables={
-# #               APP_ENV=production,
-# #               APP_DEBUG=false,
-# #               LOG_CHANNEL=stderr,
-# #               LOG_LEVEL=error,
-# #               APP_STORAGE=/tmp,
-# #               CACHE_STORE=file,
-# #               SESSION_DRIVER=cookie,
-# #               QUEUE_CONNECTION=sync,
-# #               FILESYSTEM_DISK=s3,
-# #               DB_CONNECTION=mysql,
-# #               DB_HOST=${{ secrets.DB_HOST }},
-# #               DB_PORT=3306,
-# #               DB_DATABASE=${{ secrets.DB_DATABASE }},
-# #               DB_USERNAME=${{ secrets.DB_USERNAME }},
-# #               DB_PASSWORD=${{ secrets.DB_PASSWORD }},
-# #               APP_KEY=base64:QZNUjQCEjc7Tbc3qqp48NRNBD+JHpCmBbtoUYDcIMUY=
-# #             }" >/dev/null
-# #           echo "Lambda environment updated."
-
-# #       - name: Update Lambda to new container image
-# #         run: |
-# #           aws lambda update-function-code \
-# #             --function-name "${{ secrets.LAMBDA_NAME }}" \
-# #             --image-uri "$IMAGE_TAG_SHA" >/dev/null
-# #           aws lambda wait function-updated \
-# #             --function-name "${{ secrets.LAMBDA_NAME }}"
-# #           echo "Lambda now points to image:"
-# #           aws lambda get-function \
-# #             --function-name "${{ secrets.LAMBDA_NAME }}" \
-# #             --query 'Code.ImageUri' --output text
-
-# #       - name: Install jq (for JSON assertions)
-# #         run: sudo apt-get update && sudo apt-get install -y jq
-
-# #       - name: Tail Lambda logs for 2 minutes (post-deploy)
-# #         if: always() # still run even if previous step failed, helpful for debugging
-# #         run: |
-# #           timeout 120 aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
-# #             --region "${{ env.AWS_REGION }}" \
-# #             --since 10m \
-# #             --follow \
-# #             --format short
-
-# #       # ---------- Extra diagnostics on failure ----------
-# #       - name: Show recent Lambda logs on failure (detailed)
-# #         if: failure()
-# #         run: |
-# #           aws logs tail "/aws/lambda/${{ secrets.LAMBDA_NAME }}" \
-# #             --region "${{ env.AWS_REGION }}" \
-# #             --since 30m \
-# #             --format detailed
-
-# #           echo "Last invocation's tail logs via Lambda API:"
-# #           aws lambda invoke \
-# #             --region "${{ env.AWS_REGION }}" \
-# #             --function-name "${{ secrets.LAMBDA_NAME }}" \
-# #             --log-type Tail \
-# #             /tmp/out.json --query 'LogResult' --output text | base64 --decode || true
-# #           echo
-# #           echo "Payload from last invoke:"
-# #           cat /tmp/out.json || true
+              echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+              EOS
+            )"
