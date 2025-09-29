@@ -7,7 +7,8 @@ $app = new Application(
 );
 
 // Use /tmp for storage on Lambda
-$app->useStoragePath('/tmp/storage');
+// $app->useStoragePath('/tmp/storage');
+$app->useStoragePath(base_path('storage'));
 
 // Ensure the runtime cache dir exists on every cold start
 $cacheDir = '/tmp/bootstrap/cache';
