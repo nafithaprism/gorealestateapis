@@ -1,127 +1,127 @@
-name: Deploy to EC2 via SSM (Laravel)
+# name: Deploy to EC2 via SSM (Laravel)
 
-on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
+# on:
+#   push:
+#     branches: ["main"]
+#   workflow_dispatch:
 
-env:
-  AWS_REGION: us-east-1
+# env:
+#   AWS_REGION: us-east-1
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read
 
-    steps:
-      - name: Checkout (optional)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+#     steps:
+#       - name: Checkout (optional)
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 1
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Ensure jq is installed
-        run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y jq
-          fi
+#       - name: Ensure jq is installed
+#         run: |
+#           if ! command -v jq >/dev/null 2>&1; then
+#             sudo apt-get update -y
+#             sudo apt-get install -y jq
+#           fi
 
-      - name: Deploy via SSM (git pull on EC2)
-        env:
-          RAW_INSTANCE_ID: i-0ef615ac9851108fd
-        run: |
-          set -euo pipefail
-          INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
+#       - name: Deploy via SSM (git pull on EC2)
+#         env:
+#           RAW_INSTANCE_ID: i-0ef615ac9851108fd
+#         run: |
+#           set -euo pipefail
+#           INSTANCE_ID="$(echo -n "$RAW_INSTANCE_ID" | tr -d '[:space:]')"
 
-          # Build remote script safely (no NUL/quoting issues)
-          SCRIPT=$(cat <<'EOS'
-          set -euo pipefail
-          APP_DIR="/var/www/gorealestateapis"
-          BRANCH="main"
-          PHP_FPM="php8.3-fpm"
-          NGINX="nginx"
+#           # Build remote script safely (no NUL/quoting issues)
+#           SCRIPT=$(cat <<'EOS'
+#           set -euo pipefail
+#           APP_DIR="/var/www/gorealestateapis"
+#           BRANCH="main"
+#           PHP_FPM="php8.3-fpm"
+#           NGINX="nginx"
 
-          cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
+#           cd "$APP_DIR" || { echo "App dir not found: $APP_DIR"; exit 1; }
 
-          php artisan down || true
+#           php artisan down || true
 
-          if [ ! -d .git ]; then
-            echo "❌ Not a git repo at $APP_DIR"; exit 1
-          fi
+#           if [ ! -d .git ]; then
+#             echo "❌ Not a git repo at $APP_DIR"; exit 1
+#           fi
 
-          git fetch --all
-          git reset --hard "origin/$BRANCH"
+#           git fetch --all
+#           git reset --hard "origin/$BRANCH"
 
-          if ! command -v composer >/dev/null 2>&1; then
-            echo "❌ Composer not found on server"; exit 1
-          fi
-          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+#           if ! command -v composer >/dev/null 2>&1; then
+#             echo "❌ Composer not found on server"; exit 1
+#           fi
+#           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 
-          chmod -R ug+rw storage bootstrap/cache || true
-          php artisan migrate --force || true
-          php artisan cache:clear || true
-          php artisan config:cache || true
-          php artisan route:cache || true
-          php artisan view:cache || true
-          php artisan queue:restart || true
+#           chmod -R ug+rw storage bootstrap/cache || true
+#           php artisan migrate --force || true
+#           php artisan cache:clear || true
+#           php artisan config:cache || true
+#           php artisan route:cache || true
+#           php artisan view:cache || true
+#           php artisan queue:restart || true
 
-          systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
-          systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
+#           systemctl is-active --quiet "$PHP_FPM" && sudo systemctl reload "$PHP_FPM" || true
+#           systemctl is-active --quiet "$NGINX"   && sudo systemctl reload "$NGINX"   || true
 
-          php artisan up || true
+#           php artisan up || true
 
-          echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          EOS
-          )
+#           echo "✅ Deploy complete on $(hostname) at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+#           EOS
+#           )
 
-          # Build parameters JSON
-          jq -n --arg s "$SCRIPT" '{commands: [$s]}' > /tmp/params.json
+#           # Build parameters JSON
+#           jq -n --arg s "$SCRIPT" '{commands: [$s]}' > /tmp/params.json
 
-          # Send command (capture any AWS CLI error)
-          set +e
-          CMD_JSON=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Deploy $GITHUB_SHA" \
-            --parameters file:///tmp/params.json 2> /tmp/ssm_error.txt)
-          RC=$?
-          set -e
-          if [ $RC -ne 0 ]; then
-            echo "❌ aws ssm send-command failed:"
-            cat /tmp/ssm_error.txt
-            exit $RC
-          fi
+#           # Send command (capture any AWS CLI error)
+#           set +e
+#           CMD_JSON=$(aws ssm send-command \
+#             --instance-ids "$INSTANCE_ID" \
+#             --document-name "AWS-RunShellScript" \
+#             --comment "Deploy $GITHUB_SHA" \
+#             --parameters file:///tmp/params.json 2> /tmp/ssm_error.txt)
+#           RC=$?
+#           set -e
+#           if [ $RC -ne 0 ]; then
+#             echo "❌ aws ssm send-command failed:"
+#             cat /tmp/ssm_error.txt
+#             exit $RC
+#           fi
 
-          COMMAND_ID=$(echo "$CMD_JSON" | jq -r '.Command.CommandId')
-          echo "CommandId: $COMMAND_ID"
+#           COMMAND_ID=$(echo "$CMD_JSON" | jq -r '.Command.CommandId')
+#           echo "CommandId: $COMMAND_ID"
 
-          # Wait for completion and print output
-          for i in {1..60}; do
-            STATUS=$(aws ssm list-command-invocations \
-              --command-id "$COMMAND_ID" \
-              --details \
-              | jq -r '.CommandInvocations[0].Status // empty')
-            [ -n "$STATUS" ] || { sleep 2; continue; }
-            echo "SSM status: $STATUS"
-            case "$STATUS" in
-              Success|Cancelled|TimedOut|Failed) break ;;
-            esac
-            sleep 3
-          done
+#           # Wait for completion and print output
+#           for i in {1..60}; do
+#             STATUS=$(aws ssm list-command-invocations \
+#               --command-id "$COMMAND_ID" \
+#               --details \
+#               | jq -r '.CommandInvocations[0].Status // empty')
+#             [ -n "$STATUS" ] || { sleep 2; continue; }
+#             echo "SSM status: $STATUS"
+#             case "$STATUS" in
+#               Success|Cancelled|TimedOut|Failed) break ;;
+#             esac
+#             sleep 3
+#           done
 
-          echo "---- SSM Output ----"
-          aws ssm list-command-invocations \
-            --command-id "$COMMAND_ID" \
-            --details \
-            | jq -r '
-                .CommandInvocations[0].CommandPlugins[0] as $p
-                | "STDOUT:\n" + ($p.Output // "") + "\n\nSTDERR URL:\n" + ($p.StandardErrorUrl // "")
-              '
+#           echo "---- SSM Output ----"
+#           aws ssm list-command-invocations \
+#             --command-id "$COMMAND_ID" \
+#             --details \
+#             | jq -r '
+#                 .CommandInvocations[0].CommandPlugins[0] as $p
+#                 | "STDOUT:\n" + ($p.Output // "") + "\n\nSTDERR URL:\n" + ($p.StandardErrorUrl // "")
+#               '
